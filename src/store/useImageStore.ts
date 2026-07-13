@@ -48,6 +48,15 @@ function setStatus(images: ImageItem[], id: string, status: ProcessStatus): Imag
   return images.map((item) => (item.id === id ? { ...item, status } : item))
 }
 
+/**
+ * Per-image request counter. Because several `processImage` calls for the same image can be
+ * in flight at once (rapid settings changes fan out to a worker pool), worker results may
+ * complete out of order. We stamp each request with a monotonic sequence and only apply the
+ * result if it is still the latest request for that image — otherwise a slow, stale job (e.g.
+ * a full-resolution encode) could overwrite the correct result of a newer downscaled one.
+ */
+const requestSeq = new Map<string, number>()
+
 export const useImageStore = create<ImageState>((set, get) => ({
   images: [],
   activeId: null,
@@ -95,6 +104,7 @@ export const useImageStore = create<ImageState>((set, get) => ({
       const images = state.images.filter((item) => item.id !== id)
       const selectedIds = new Set(state.selectedIds)
       selectedIds.delete(id)
+      requestSeq.delete(id)
       return {
         images,
         selectedIds,
@@ -109,6 +119,7 @@ export const useImageStore = create<ImageState>((set, get) => ({
       URL.revokeObjectURL(item.source.originalUrl)
       if (item.result) URL.revokeObjectURL(item.result.url)
     })
+    requestSeq.clear()
     set({ images: [], activeId: null, selectedIds: new Set(), batchProgress: null })
   },
 
@@ -173,6 +184,10 @@ export const useImageStore = create<ImageState>((set, get) => ({
     if (!item) return
 
     const requestedSettings = item.settings
+    const seq = (requestSeq.get(id) ?? 0) + 1
+    requestSeq.set(id, seq)
+    const isLatest = () => requestSeq.get(id) === seq
+
     set((state) => ({ images: setStatus(state.images, id, 'processing') }))
 
     try {
@@ -182,6 +197,11 @@ export const useImageStore = create<ImageState>((set, get) => ({
         requestedSettings,
         item.source.type,
       )
+
+      // A newer request superseded this one while it was encoding — discard the stale result
+      // so a slow full-resolution job cannot clobber the correct newer (e.g. downscaled) one.
+      if (!isLatest()) return
+
       const url = URL.createObjectURL(blob)
 
       set((state) => ({
@@ -209,6 +229,7 @@ export const useImageStore = create<ImageState>((set, get) => ({
         ],
       }))
     } catch (error) {
+      if (!isLatest()) return
       const message =
         error instanceof Error ? error.message : '처리 중 오류가 발생했습니다.'
       set((state) => ({
