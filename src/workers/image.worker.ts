@@ -27,8 +27,8 @@ ctx.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     const blob = await canvas.convertToBlob({ type: mime, quality })
 
     console.debug(
-  `[OptiImage worker] format=${settings.format} qualityInput=${settings.quality} qualityArg=${quality} -> ${canvas.width}x${canvas.height}, ${blob.size} bytes`,
-                  )
+      `[OptiImage worker] format=${settings.format} qualityInput=${settings.quality} qualityArg=${quality} -> ${canvas.width}x${canvas.height}, ${blob.size} bytes`,
+    )
 
     post({ type: 'progress', requestId, progress: 100 })
     post({ type: 'success', requestId, blob, width: canvas.width, height: canvas.height })
