@@ -65,6 +65,8 @@ export interface ImageItem {
   settings: EditSettings
   status: ProcessStatus
   result: ProcessedResult | null
+  /** Settings snapshot that produced `result`; used to detect a stale result while a re-process is pending. */
+  resultSettings: EditSettings | null
   error: string | null
   /** Undo/redo history of settings for this item. */
   history: EditSettings[]

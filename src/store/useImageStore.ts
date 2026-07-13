@@ -66,6 +66,7 @@ export const useImageStore = create<ImageState>((set, get) => ({
           settings: { ...DEFAULT_EDIT_SETTINGS },
           status: 'idle',
           result: null,
+          resultSettings: null,
           error: null,
           history: [{ ...DEFAULT_EDIT_SETTINGS }],
           historyIndex: 0,
@@ -171,13 +172,14 @@ export const useImageStore = create<ImageState>((set, get) => ({
     const item = get().images.find((i) => i.id === id)
     if (!item) return
 
+    const requestedSettings = item.settings
     set((state) => ({ images: setStatus(state.images, id, 'processing') }))
 
     try {
       const bitmap = await createImageBitmap(item.source.file)
       const { blob, width, height } = await imageWorkerPool.process(
         bitmap,
-        item.settings,
+        requestedSettings,
         item.source.type,
       )
       const url = URL.createObjectURL(blob)
@@ -196,8 +198,9 @@ export const useImageStore = create<ImageState>((set, get) => ({
               width,
               height,
               size: blob.size,
-              format: i.settings.format,
+              format: requestedSettings.format,
             },
+            resultSettings: requestedSettings,
           }
         }),
         logs: [
