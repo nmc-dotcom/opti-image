@@ -63,6 +63,10 @@ export function useFileDrop({ onFiles, onRejected }: UseFileDropOptions) {
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault()
+      // Stop bubbling so a drop is handled exactly once. The empty-state Dropzone is nested
+      // inside App's full-window dropzone; without this a single drop fires both handlers and
+      // the file is added twice.
+      e.stopPropagation()
       dragCounter.current = 0
       setIsDragging(false)
       if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files)
