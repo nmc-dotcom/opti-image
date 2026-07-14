@@ -9,7 +9,10 @@ export function Dropzone() {
   const inputRef = useRef<HTMLInputElement>(null)
   const addFiles = useImageStore((s) => s.addFiles)
 
-  const { isDragging, dropzoneProps, onInputChange } = useFileDrop({
+  // Only the file-picker (click) path lives here; drag & drop is handled globally by App's
+  // full-window dropzone. Binding drag handlers here too would double-add files and leave the
+  // App-level drag overlay stuck, since a nested drop wouldn't reach App to reset its state.
+  const { onInputChange } = useFileDrop({
     onFiles: (files) => {
       addFiles(files)
       toast({ title: `${files.length}개 파일 추가됨` })
@@ -25,11 +28,10 @@ export function Dropzone() {
 
   return (
     <div
-      {...dropzoneProps}
       onClick={() => inputRef.current?.click()}
       className={cn(
         'flex h-full flex-1 cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed m-4 transition-colors',
-        isDragging ? 'border-primary bg-accent' : 'border-border hover:bg-accent/40',
+        'border-border hover:bg-accent/40',
       )}
     >
       <input
