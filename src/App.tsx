@@ -12,6 +12,8 @@ import { FileList } from '@/features/editor/FileList'
 import { PreviewCanvas } from '@/features/editor/PreviewCanvas'
 import { SettingsPanel } from '@/features/editor/SettingsPanel'
 import { StatusBar } from '@/features/editor/StatusBar'
+import { IntroBar } from '@/features/layout/IntroBar'
+import { Footer } from '@/features/layout/Footer'
 import { Dropzone } from '@/features/upload/Dropzone'
 import { BatchExportDialog } from '@/features/batch/BatchExportDialog'
 import { downloadSingleImage } from '@/lib/download'
@@ -59,6 +61,7 @@ function App() {
     <TooltipProvider>
       <div {...dropzoneProps} className="relative flex h-screen flex-col overflow-hidden">
         <TopBar />
+        <IntroBar />
 
         <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
           <aside className="flex max-h-48 w-full shrink-0 flex-col border-b lg:h-auto lg:max-h-none lg:w-64 lg:border-b-0 lg:border-r">
@@ -75,6 +78,7 @@ function App() {
         </div>
 
         <StatusBar />
+        <Footer />
 
         {isDragging && (
           <div className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-primary/10 backdrop-blur-sm">
