@@ -1,35 +1,40 @@
-import { Lock, Zap } from 'lucide-react'
+import { Lock } from 'lucide-react'
 
-const REPO_URL = 'https://github.com/nmc-dotcom/opti-image'
+const HOLORADO_HOME = 'https://holorado.me'
+const PRIVACY_URL = 'https://holorado.me/privacy'
 
 /**
- * App footer with the privacy note, tech credits, and a repository link. Kept slim so it fits
- * the fixed full-height workspace without crowding the editor.
+ * Minimal app footer: maker attribution (홀로라도) and a privacy-policy link, kept slim so it
+ * never crowds the editor. Mirrors the understated footer tone of the sibling OptiPDF site.
  */
 export function Footer() {
   return (
     <footer className="flex shrink-0 flex-col items-center justify-between gap-1 border-t bg-background px-4 py-2 text-[11px] text-muted-foreground sm:flex-row">
-      <div className="flex items-center gap-3">
-        <span className="font-medium text-foreground">OptiImage</span>
-        <span>© {new Date().getFullYear()}</span>
-        <span className="hidden items-center gap-1 sm:inline-flex">
-          <Lock className="h-3 w-3" />
-          모든 처리는 브라우저에서 · 파일은 서버로 전송되지 않습니다
-        </span>
-      </div>
+      <span className="hidden items-center gap-1 sm:inline-flex">
+        <Lock className="h-3 w-3" />
+        모든 처리는 브라우저에서 이루어집니다
+      </span>
 
-      <div className="flex items-center gap-3">
-        <span className="hidden items-center gap-1 md:inline-flex">
-          <Zap className="h-3 w-3" />
-          Canvas API · Web Workers
+      <div className="flex items-center gap-2">
+        <span>
+          <a
+            href={HOLORADO_HOME}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-foreground transition-colors hover:text-primary"
+          >
+            홀로라도
+          </a>
+          가 만든 도구입니다
         </span>
+        <span aria-hidden>·</span>
         <a
-          href={REPO_URL}
+          href={PRIVACY_URL}
           target="_blank"
           rel="noreferrer"
-          className="font-medium transition-colors hover:text-foreground"
+          className="transition-colors hover:text-foreground"
         >
-          GitHub
+          개인정보처리방침
         </a>
       </div>
     </footer>
