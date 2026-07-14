@@ -6,10 +6,48 @@ interface Point {
   y: number
 }
 
+interface ContentRect {
+  offsetX: number
+  offsetY: number
+  width: number
+  height: number
+}
+
 /**
- * Drives an interactive crop rectangle drawn on top of a rendered <img>.
- * Coordinates are tracked in rendered (CSS pixel) space and converted to natural
- * image-pixel space via `naturalWidth/renderedWidth` scale on commit.
+ * Computes the actual displayed image content box inside the <img> element. Because the image
+ * is rendered with `object-contain`, its content can be letterboxed (centered with padding)
+ * when the element's box aspect ratio differs from the image's. Crop coordinates must be mapped
+ * against this content box, not the element box, or the crop lands on the wrong region.
+ */
+export function getContentRect(
+  el: HTMLImageElement,
+  elWidth: number,
+  elHeight: number,
+): ContentRect {
+  const { naturalWidth: nw, naturalHeight: nh } = el
+  if (!nw || !nh) return { offsetX: 0, offsetY: 0, width: elWidth, height: elHeight }
+
+  const elRatio = elWidth / elHeight
+  const imgRatio = nw / nh
+
+  let width: number
+  let height: number
+  if (elRatio > imgRatio) {
+    // Element is wider than the image → padding on left/right.
+    height = elHeight
+    width = elHeight * imgRatio
+  } else {
+    // Element is taller than the image → padding on top/bottom.
+    width = elWidth
+    height = elWidth / imgRatio
+  }
+  return { offsetX: (elWidth - width) / 2, offsetY: (elHeight - height) / 2, width, height }
+}
+
+/**
+ * Drives an interactive crop rectangle drawn on top of a rendered <img>. Pointer positions are
+ * tracked in element-local CSS pixels, clamped to the visible image content box, and converted
+ * to natural image-pixel coordinates (accounting for object-contain letterboxing) on commit.
  */
 export function useCropOverlay(
   imageRef: React.RefObject<HTMLImageElement | null>,
@@ -29,9 +67,11 @@ export function useCropOverlay(
       const el = imageRef.current
       if (!el) return { x: 0, y: 0 }
       const rect = el.getBoundingClientRect()
+      const content = getContentRect(el, rect.width, rect.height)
+      // Clamp to the visible image content so the box can't be drawn over the letterbox padding.
       return {
-        x: Math.min(Math.max(e.clientX - rect.left, 0), rect.width),
-        y: Math.min(Math.max(e.clientY - rect.top, 0), rect.height),
+        x: Math.min(Math.max(e.clientX - rect.left, content.offsetX), content.offsetX + content.width),
+        y: Math.min(Math.max(e.clientY - rect.top, content.offsetY), content.offsetY + content.height),
       }
     },
     [imageRef],
@@ -41,11 +81,13 @@ export function useCropOverlay(
     (rect: { x: number; y: number; w: number; h: number }) => {
       const el = imageRef.current
       if (!el || rect.w < 4 || rect.h < 4) return
-      const scaleX = el.naturalWidth / el.clientWidth
-      const scaleY = el.naturalHeight / el.clientHeight
+      const bounds = el.getBoundingClientRect()
+      const content = getContentRect(el, bounds.width, bounds.height)
+      const scaleX = el.naturalWidth / content.width
+      const scaleY = el.naturalHeight / content.height
       onChange({
-        x: Math.round(rect.x * scaleX),
-        y: Math.round(rect.y * scaleY),
+        x: Math.round((rect.x - content.offsetX) * scaleX),
+        y: Math.round((rect.y - content.offsetY) * scaleY),
         width: Math.round(rect.w * scaleX),
         height: Math.round(rect.h * scaleY),
       })
@@ -82,6 +124,9 @@ export function useCropOverlay(
       onCommit()
     }
     start.current = null
+    // Clear the live draft; the resting crop box is rendered from settings.crop so that
+    // preset-applied crops and manual drags share a single source of truth.
+    setDraftRect(null)
   }, [draftRect, commitRectToSettings, onCommit])
 
   return { draftRect, onPointerDown, onPointerMove, onPointerUp }

@@ -1,9 +1,9 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { GripVertical } from 'lucide-react'
 import { useImageStore } from '@/store/useImageStore'
 import { useUiStore } from '@/store/useUiStore'
 import { Spinner } from '@/components/ui/spinner'
-import { useCropOverlay } from '@/hooks/useCropOverlay'
+import { getContentRect, useCropOverlay } from '@/hooks/useCropOverlay'
 import { cn } from '@/lib/utils'
 
 export function PreviewCanvas() {
@@ -14,9 +14,49 @@ export function PreviewCanvas() {
   const activeTool = useUiStore((s) => s.activeTool)
 
   const [sliderPos, setSliderPos] = useState(50)
+  const [contentBox, setContentBox] = useState({
+    offsetX: 0,
+    offsetY: 0,
+    width: 0,
+    height: 0,
+  })
   const containerRef = useRef<HTMLDivElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
   const draggingSlider = useRef(false)
+
+  // Track the actual displayed image content box so a committed/preset crop can be drawn over
+  // exactly the right pixels (mirrors the mapping used to read a drag back to natural pixels).
+  const measureContent = useCallback(() => {
+    const el = imgRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const next = getContentRect(el, rect.width, rect.height)
+    // Only update when the box actually changes; returning the previous reference otherwise
+    // avoids an infinite render loop (this runs in a layout effect on every commit).
+    setContentBox((prev) =>
+      prev.offsetX === next.offsetX &&
+      prev.offsetY === next.offsetY &&
+      prev.width === next.width &&
+      prev.height === next.height
+        ? prev
+        : next,
+    )
+  }, [])
+
+  useLayoutEffect(() => {
+    measureContent()
+  })
+
+  useEffect(() => {
+    const ro = new ResizeObserver(measureContent)
+    if (imgRef.current) ro.observe(imgRef.current)
+    if (containerRef.current) ro.observe(containerRef.current)
+    window.addEventListener('resize', measureContent)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measureContent)
+    }
+  }, [measureContent])
 
   const onSliderPointerDown = useCallback((e: React.PointerEvent) => {
     draggingSlider.current = true
@@ -61,6 +101,19 @@ export function PreviewCanvas() {
   const boxWidth = isCropping || !item.result ? item.source.width : item.result.width
   const boxHeight = isCropping || !item.result ? item.source.height : item.result.height
 
+  // Map the committed crop (natural pixels) back onto the displayed content box, so a crop set
+  // via a ratio preset or a previous drag stays visible while editing.
+  const crop = item.settings.crop
+  const committedCropBox =
+    isCropping && crop && !cropOverlay.draftRect && contentBox.width > 0
+      ? {
+          left: contentBox.offsetX + (crop.x / item.source.width) * contentBox.width,
+          top: contentBox.offsetY + (crop.y / item.source.height) * contentBox.height,
+          width: (crop.width / item.source.width) * contentBox.width,
+          height: (crop.height / item.source.height) * contentBox.height,
+        }
+      : null
+
   return (
     <div className="flex h-full flex-col gap-3 p-4">
       <div className="flex items-center justify-between text-sm">
@@ -87,6 +140,7 @@ export function PreviewCanvas() {
             alt={item.source.name}
             className="absolute inset-0 block h-full w-full select-none object-contain"
             draggable={false}
+            onLoad={measureContent}
           />
 
           {item.result && !isCropping && (
@@ -140,6 +194,17 @@ export function PreviewCanvas() {
                     top: cropOverlay.draftRect.y,
                     width: cropOverlay.draftRect.w,
                     height: cropOverlay.draftRect.h,
+                  }}
+                />
+              )}
+              {committedCropBox && (
+                <div
+                  className="pointer-events-none absolute border-2 border-primary bg-primary/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
+                  style={{
+                    left: committedCropBox.left,
+                    top: committedCropBox.top,
+                    width: committedCropBox.width,
+                    height: committedCropBox.height,
                   }}
                 />
               )}
