@@ -1,4 +1,4 @@
-import { Download, Redo2, Undo2 } from 'lucide-react'
+import { Download, Redo2, Sparkles, Undo2 } from 'lucide-react'
 import { useImageStore } from '@/store/useImageStore'
 import { useUiStore, type EditorTool } from '@/store/useUiStore'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -10,6 +10,7 @@ import { TransformPanel } from './panels/TransformPanel'
 import { CropPanel } from './panels/CropPanel'
 import { RenamePanel } from './panels/RenamePanel'
 import { downloadSingleImage } from '@/lib/download'
+import { WEB_OPTIMIZE_LONG_EDGE, webOptimizePreset } from '@/lib/constants'
 
 const TOOL_TABS: { value: EditorTool; label: string }[] = [
   { value: 'resize', label: 'Resize' },
@@ -24,6 +25,8 @@ export function SettingsPanel() {
   const item = useImageStore((s) => s.images.find((i) => i.id === activeId))
   const undo = useImageStore((s) => s.undo)
   const redo = useImageStore((s) => s.redo)
+  const updateSettings = useImageStore((s) => s.updateSettings)
+  const commitHistory = useImageStore((s) => s.commitHistory)
   const renameRule = useImageStore((s) => s.renameRule)
   const activeTool = useUiStore((s) => s.activeTool)
   const setActiveTool = useUiStore((s) => s.setActiveTool)
@@ -39,9 +42,27 @@ export function SettingsPanel() {
   const canUndo = item.historyIndex > 0
   const canRedo = item.historyIndex < item.history.length - 1
 
+  const applyWebOptimize = () => {
+    updateSettings(item.id, webOptimizePreset)
+    commitHistory(item.id)
+  }
+
+  const longestEdge = Math.max(item.source.width, item.source.height)
+  const optimizeHint =
+    longestEdge > WEB_OPTIMIZE_LONG_EDGE
+      ? `긴 변 ${WEB_OPTIMIZE_LONG_EDGE}px · JPG 품질 80으로 자동 축소`
+      : 'JPG 품질 80으로 재인코딩 (이미 작은 이미지)'
+
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
       <CompressionStats />
+
+      <div className="space-y-1">
+        <Button className="w-full" variant="secondary" onClick={applyWebOptimize}>
+          <Sparkles /> 웹 최적화
+        </Button>
+        <p className="text-center text-[11px] text-muted-foreground">{optimizeHint}</p>
+      </div>
 
       <div className="flex items-center gap-1.5">
         <Button
