@@ -10,6 +10,10 @@ const PRESETS: { label: string; ratio: number | null }[] = [
   { label: '16:9', ratio: 16 / 9 },
 ]
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), Math.max(min, max))
+}
+
 export function CropPanel() {
   const activeId = useImageStore((s) => s.activeId)
   const item = useImageStore((s) => s.images.find((i) => i.id === activeId))
@@ -35,10 +39,28 @@ export function CropPanel() {
     commitHistory(item.id)
   }
 
+  // Typing a new width/height keeps the top-left corner (x, y) anchored and clamps the value so
+  // the box never runs past the image edge.
+  const setCropSize = (patch: { width?: number } | { height?: number }) => {
+    updateSettings(item.id, (s) => {
+      if (!s.crop) return s
+      const width =
+        'width' in patch && patch.width !== undefined
+          ? clamp(Math.round(patch.width), 1, srcW - s.crop.x)
+          : s.crop.width
+      const height =
+        'height' in patch && patch.height !== undefined
+          ? clamp(Math.round(patch.height), 1, srcH - s.crop.y)
+          : s.crop.height
+      return { ...s, crop: { ...s.crop, width, height } }
+    })
+  }
+
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        미리보기 이미지 위에서 드래그하여 자를 영역을 지정하세요.
+        미리보기 이미지 위에서 드래그하여 자를 영역을 지정하세요. 박스 안쪽을 드래그하면
+        크기를 유지한 채 이동합니다.
       </p>
 
       <div className="space-y-1.5">
@@ -61,8 +83,18 @@ export function CropPanel() {
         <div className="grid grid-cols-2 gap-2 text-xs">
           <Field label="X" value={crop.x} />
           <Field label="Y" value={crop.y} />
-          <Field label="너비" value={crop.width} />
-          <Field label="높이" value={crop.height} />
+          <EditableField
+            label="너비"
+            value={crop.width}
+            onChange={(width) => setCropSize({ width })}
+            onCommit={() => commitHistory(item.id)}
+          />
+          <EditableField
+            label="높이"
+            value={crop.height}
+            onChange={(height) => setCropSize({ height })}
+            onCommit={() => commitHistory(item.id)}
+          />
         </div>
       )}
 
@@ -84,6 +116,35 @@ function Field({ label, value }: { label: string; value: number }) {
     <div className="space-y-1">
       <Label className="text-[11px] text-muted-foreground">{label}</Label>
       <Input value={value} readOnly className="h-8 text-xs" />
+    </div>
+  )
+}
+
+function EditableField({
+  label,
+  value,
+  onChange,
+  onCommit,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  onCommit: () => void
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-[11px] text-muted-foreground">{label}</Label>
+      <Input
+        type="number"
+        min={1}
+        value={value}
+        className="h-8 text-xs"
+        onChange={(e) => {
+          const next = Number(e.target.value)
+          if (!Number.isNaN(next)) onChange(next)
+        }}
+        onBlur={onCommit}
+      />
     </div>
   )
 }

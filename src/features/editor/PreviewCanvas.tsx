@@ -76,6 +76,7 @@ export function PreviewCanvas() {
 
   const cropOverlay = useCropOverlay(
     imgRef,
+    item?.settings.crop ?? null,
     (rect) => {
       if (!item) return
       updateSettings(item.id, (s) => ({ ...s, crop: rect }))

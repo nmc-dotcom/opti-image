@@ -48,9 +48,14 @@ export function getContentRect(
  * Drives an interactive crop rectangle drawn on top of a rendered <img>. Pointer positions are
  * tracked in element-local CSS pixels, clamped to the visible image content box, and converted
  * to natural image-pixel coordinates (accounting for object-contain letterboxing) on commit.
+ *
+ * Two interactions are supported: starting a drag outside the current committed crop draws a
+ * new rectangle from scratch (resize-by-redraw); starting a drag inside it translates the
+ * existing box, keeping its width/height fixed.
  */
 export function useCropOverlay(
   imageRef: React.RefObject<HTMLImageElement | null>,
+  crop: CropRect | null,
   onChange: (rect: CropRect) => void,
   onCommit: () => void,
 ) {
@@ -61,6 +66,8 @@ export function useCropOverlay(
     h: number
   } | null>(null)
   const start = useRef<Point | null>(null)
+  const mode = useRef<'draw' | 'move'>('draw')
+  const moveOrigin = useRef<{ boxX: number; boxY: number; w: number; h: number } | null>(null)
 
   const toLocalPoint = useCallback(
     (e: React.PointerEvent): Point => {
@@ -76,6 +83,23 @@ export function useCropOverlay(
     },
     [imageRef],
   )
+
+  // Maps the currently committed crop (natural pixels) onto the displayed content box, so a
+  // pointerdown can be tested against where the existing box actually is on screen.
+  const getLocalCropBox = useCallback(() => {
+    const el = imageRef.current
+    if (!el || !crop || !el.naturalWidth || !el.naturalHeight) return null
+    const bounds = el.getBoundingClientRect()
+    const content = getContentRect(el, bounds.width, bounds.height)
+    const scaleX = content.width / el.naturalWidth
+    const scaleY = content.height / el.naturalHeight
+    return {
+      x: content.offsetX + crop.x * scaleX,
+      y: content.offsetY + crop.y * scaleY,
+      w: crop.width * scaleX,
+      h: crop.height * scaleY,
+    }
+  }, [imageRef, crop])
 
   const commitRectToSettings = useCallback(
     (rect: { x: number; y: number; w: number; h: number }) => {
@@ -99,23 +123,57 @@ export function useCropOverlay(
     (e: React.PointerEvent) => {
       ;(e.target as Element).setPointerCapture(e.pointerId)
       const point = toLocalPoint(e)
+      const box = getLocalCropBox()
+
+      if (box && point.x >= box.x && point.x <= box.x + box.w && point.y >= box.y && point.y <= box.y + box.h) {
+        mode.current = 'move'
+        start.current = point
+        moveOrigin.current = { boxX: box.x, boxY: box.y, w: box.w, h: box.h }
+        setDraftRect(box)
+        return
+      }
+
+      mode.current = 'draw'
       start.current = point
+      moveOrigin.current = null
       setDraftRect({ x: point.x, y: point.y, w: 0, h: 0 })
     },
-    [toLocalPoint],
+    [toLocalPoint, getLocalCropBox],
   )
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!start.current) return
       const point = toLocalPoint(e)
+
+      if (mode.current === 'move' && moveOrigin.current) {
+        const el = imageRef.current
+        if (!el) return
+        const bounds = el.getBoundingClientRect()
+        const content = getContentRect(el, bounds.width, bounds.height)
+        const { boxX, boxY, w, h } = moveOrigin.current
+        const dx = point.x - start.current.x
+        const dy = point.y - start.current.y
+        const minX = content.offsetX
+        const minY = content.offsetY
+        const maxX = Math.max(minX, content.offsetX + content.width - w)
+        const maxY = Math.max(minY, content.offsetY + content.height - h)
+        setDraftRect({
+          x: Math.min(Math.max(boxX + dx, minX), maxX),
+          y: Math.min(Math.max(boxY + dy, minY), maxY),
+          w,
+          h,
+        })
+        return
+      }
+
       const x = Math.min(start.current.x, point.x)
       const y = Math.min(start.current.y, point.y)
       const w = Math.abs(point.x - start.current.x)
       const h = Math.abs(point.y - start.current.y)
       setDraftRect({ x, y, w, h })
     },
-    [toLocalPoint],
+    [toLocalPoint, imageRef],
   )
 
   const onPointerUp = useCallback(() => {
@@ -124,6 +182,8 @@ export function useCropOverlay(
       onCommit()
     }
     start.current = null
+    moveOrigin.current = null
+    mode.current = 'draw'
     // Clear the live draft; the resting crop box is rendered from settings.crop so that
     // preset-applied crops and manual drags share a single source of truth.
     setDraftRect(null)
