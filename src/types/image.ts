@@ -34,6 +34,8 @@ export interface EditSettings {
   rotation: 0 | 90 | 180 | 270
   flip: FlipAxis
   crop: CropRect | null
+  /** AI background removal (ISNet, run client-side before the crop/rotate/resize pipeline). */
+  backgroundRemoval: boolean
 }
 
 export type ProcessStatus = 'idle' | 'queued' | 'processing' | 'done' | 'error'

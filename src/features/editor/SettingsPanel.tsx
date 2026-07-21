@@ -8,6 +8,7 @@ import { ResizePanel } from './panels/ResizePanel'
 import { FormatPanel } from './panels/FormatPanel'
 import { TransformPanel } from './panels/TransformPanel'
 import { CropPanel } from './panels/CropPanel'
+import { BackgroundRemovalPanel } from './panels/BackgroundRemovalPanel'
 import { RenamePanel } from './panels/RenamePanel'
 import { downloadSingleImage } from '@/lib/download'
 import { WEB_OPTIMIZE_LONG_EDGE, webOptimizePreset } from '@/lib/constants'
@@ -17,6 +18,7 @@ const TOOL_TABS: { value: EditorTool; label: string }[] = [
   { value: 'format', label: 'Format' },
   { value: 'transform', label: 'Rotate' },
   { value: 'crop', label: 'Crop' },
+  { value: 'ai', label: 'AI' },
   { value: 'rename', label: 'Rename' },
 ]
 
@@ -92,7 +94,7 @@ export function SettingsPanel() {
       </div>
 
       <Tabs value={activeTool} onValueChange={(v) => setActiveTool(v as EditorTool)}>
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           {TOOL_TABS.map((tab) => (
             <TabsTrigger key={tab.value} value={tab.value} className="text-xs">
               {tab.label}
@@ -110,6 +112,9 @@ export function SettingsPanel() {
         </TabsContent>
         <TabsContent value="crop">
           <CropPanel />
+        </TabsContent>
+        <TabsContent value="ai">
+          <BackgroundRemovalPanel />
         </TabsContent>
         <TabsContent value="rename">
           <RenamePanel />

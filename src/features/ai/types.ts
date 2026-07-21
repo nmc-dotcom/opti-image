@@ -9,5 +9,10 @@ export interface AiPlugin<TOptions = Record<string, unknown>, TResult = Blob> {
   description: string
   /** Whether model assets are available; false renders the tool as "coming soon". */
   isReady: boolean
-  run: (input: { bitmap: ImageBitmap; options?: TOptions }) => Promise<TResult>
+  run: (input: {
+    bitmap: ImageBitmap
+    options?: TOptions
+    /** 0-100. Covers first-run model download plus inference. */
+    onProgress?: (progress: number) => void
+  }) => Promise<TResult>
 }

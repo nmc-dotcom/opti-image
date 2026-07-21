@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { DEFAULT_EDIT_SETTINGS, MAX_HISTORY_LENGTH } from '@/lib/constants'
 import { createSourceImage } from '@/lib/loadImage'
 import { imageWorkerPool } from '@/workers/imageWorkerClient'
+import { backgroundRemovalPlugin } from '@/features/ai/background-removal'
 import type {
   EditSettings,
   ImageItem,
@@ -16,6 +17,8 @@ interface ImageState {
   selectedIds: Set<string>
   logs: LogEntry[]
   batchProgress: { current: number; total: number } | null
+  /** First-run model download + inference progress for the active background-removal job. */
+  aiProgress: { label: string; percent: number } | null
 
   addFiles: (files: File[]) => Promise<void>
   removeImage: (id: string) => void
@@ -63,6 +66,7 @@ export const useImageStore = create<ImageState>((set, get) => ({
   selectedIds: new Set(),
   logs: [],
   batchProgress: null,
+  aiProgress: null,
 
   addFiles: async (files) => {
     const created = await Promise.all(
@@ -188,14 +192,30 @@ export const useImageStore = create<ImageState>((set, get) => ({
     requestSeq.set(id, seq)
     const isLatest = () => requestSeq.get(id) === seq
 
-    set((state) => ({ images: setStatus(state.images, id, 'processing') }))
+    set((state) => ({ images: setStatus(state.images, id, 'processing'), aiProgress: null }))
 
     try {
-      const bitmap = await createImageBitmap(item.source.file)
+      let bitmap = await createImageBitmap(item.source.file)
+      let sourceType = item.source.type
+
+      if (requestedSettings.backgroundRemoval) {
+        set({ aiProgress: { label: '배경 제거 모델 로딩 중', percent: 0 } })
+        const cutout = await backgroundRemovalPlugin.run({
+          bitmap,
+          onProgress: (percent) => {
+            if (isLatest()) set({ aiProgress: { label: '배경 제거 처리 중', percent } })
+          },
+        })
+        if (!isLatest()) return
+        set({ aiProgress: null })
+        bitmap = await createImageBitmap(cutout)
+        sourceType = 'image/png'
+      }
+
       const { blob, width, height } = await imageWorkerPool.process(
         bitmap,
         requestedSettings,
-        item.source.type,
+        sourceType,
       )
 
       // A newer request superseded this one while it was encoding — discard the stale result
@@ -236,6 +256,7 @@ export const useImageStore = create<ImageState>((set, get) => ({
         images: state.images.map((i) =>
           i.id === id ? { ...i, status: 'error', error: message } : i,
         ),
+        aiProgress: null,
         logs: [...state.logs, createLogEntry('error', `${item.source.name}: ${message}`)],
       }))
     }

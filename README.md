@@ -10,9 +10,9 @@ src/
   features/
     upload/             Drag & Drop 진입점 (Dropzone)
     editor/             메인 편집 UI (TopBar, FileList, PreviewCanvas, SettingsPanel, StatusBar)
-      panels/            Resize/Format/Rotate/Crop/Rename 개별 설정 패널
+      panels/            Resize/Format/Rotate/Crop/배경제거(AI)/Rename 개별 설정 패널
     batch/              일괄 내보내기 다이얼로그 (ZIP)
-    ai/                 향후 AI 플러그인(배경제거, OCR)을 위한 인터페이스 스텁
+    ai/                 AI 플러그인 인터페이스 + 배경 제거 구현체 (OCR은 스텁)
   hooks/                useFileDrop, useAutoProcess, useCropOverlay, useKeyboardShortcuts ...
   lib/                  순수 함수 (이미지 파이프라인, 파일명 규칙, 포맷팅, 다운로드/zip)
   store/                Zustand 스토어 (useImageStore, useUiStore, useThemeStore)
@@ -84,9 +84,9 @@ App
 - **Undo/Redo & 단축키**: `Ctrl/Cmd+Z`(undo), `Ctrl/Cmd+Shift+Z` 또는 `Ctrl/Cmd+Y`(redo), `Ctrl/Cmd+S`(활성 이미지 처리 후 즉시 다운로드).
 - **Toast/로딩**: Radix Toast 기반 알림, 처리 중에는 미리보기 위에 스피너 오버레이 + 하단 진행바.
 
-## 6. 향후 AI 기능 확장 지점
+## 6. AI 기능 — 배경 제거
 
-`src/features/ai/`에 플러그인 인터페이스만 미리 마련해 두었습니다.
+`src/features/ai/`는 브라우저 내 AI 플러그인을 위한 공통 인터페이스입니다.
 
 ```ts
 // src/features/ai/types.ts
@@ -95,13 +95,20 @@ export interface AiPlugin<TOptions = Record<string, unknown>, TResult = Blob> {
   name: string
   description: string
   isReady: boolean
-  run: (input: { bitmap: ImageBitmap; options?: TOptions }) => Promise<TResult>
+  run: (input: {
+    bitmap: ImageBitmap
+    options?: TOptions
+    onProgress?: (progress: number) => void
+  }) => Promise<TResult>
 }
 ```
 
-- `features/ai/background-removal/` — ONNX Runtime Web(onnxruntime-web)으로 U^2-Net/MODNet류 모델을 별도 Web Worker에서 구동하는 자리. 기존 `imageWorkerPool`과 동일한 패턴(Transferable + Promise 래퍼)으로 붙이면 됨.
-- `features/ai/ocr/` — Tesseract.js를 자체 워커 API로 구동해 텍스트를 추출하는 자리.
-- 두 플러그인 모두 `registerAiPlugin()`으로 `features/ai/registry.ts`에 등록하면, `SettingsPanel`의 도구 탭 목록에 `isReady` 여부에 따라 "준비 중" 배지와 함께 자연스럽게 추가할 수 있는 구조입니다. 현재는 자리만 잡아두었고 실제 모델 로딩/추론은 구현되어 있지 않습니다.
+- **배경 제거** (`features/ai/background-removal/`): [`@imgly/background-removal`](https://github.com/imgly/background-removal-js)(ONNX Runtime Web, ISNet 모델)로 구현되어 있습니다. SettingsPanel의 "AI" 탭에서 토글하면 `useImageStore.processImage`가 원본 비트맵에 대해 먼저 배경을 제거한 뒤, 그 결과(RGBA PNG)를 기존 crop→rotate→flip→resize→encode 파이프라인에 그대로 태워 처리합니다.
+  - 모델/WASM 자산(약 40MB, `isnet_quint8`)은 IMG.LY CDN에서 첫 실행 시에만 내려받아 브라우저 캐시에 저장됩니다. **이미지 자체는 절대 서버로 전송되지 않으며**, 내려받는 것은 범용 모델 파일뿐입니다.
+  - 실제 추론은 라이브러리가 내부적으로 띄우는 자체 Web Worker에서 실행되어 메인 스레드를 막지 않습니다. 초기 번들 크기를 지키기 위해 `background-removal/index.ts`에서 `@imgly/background-removal`을 동적 `import()`로 불러오므로, 기능을 켜지 않는 사용자는 이 코드를 전혀 내려받지 않습니다.
+  - JPG는 알파 채널을 지원하지 않으므로, 배경 제거를 켜면 포맷이 JPG일 경우 자동으로 PNG로 전환됩니다.
+  - **라이선스 주의**: `@imgly/background-removal`은 AGPLv3입니다. 이 앱을 네트워크 서비스로 배포할 경우 AGPL 조항에 따라 전체 소스코드를 공개해야 하는 의무가 발생합니다(이 저장소는 이미 공개 상태). 비공개로 배포하려면 [IMG.LY 상업 라이선스](mailto:support@img.ly)가 필요합니다.
+- **OCR** (`features/ai/ocr/`): Tesseract.js를 자체 워커 API로 구동해 텍스트를 추출하는 자리로, 아직 미구현 상태입니다 (`isReady: false`).
 
 ## 7. 성능 최적화 전략
 
