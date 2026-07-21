@@ -1,6 +1,38 @@
 import type { AiPlugin } from '../types'
 
 /**
+ * The isnet_quint8 model leaves a band of partially-transparent pixels (alpha ~40-200)
+ * around the cutout edge — visible as a grey halo of the original background bleeding
+ * through. Remapping alpha with a steep threshold band collapses that band down to a
+ * crisp edge: anything below LOW is fully erased, anything above HIGH is fully kept, and
+ * only the narrow band between is left graded (for a touch of anti-aliasing).
+ */
+const ALPHA_LOW = 90
+const ALPHA_HIGH = 165
+
+async function sharpenCutoutEdges(blob: Blob): Promise<Blob> {
+  const bitmap = await createImageBitmap(blob)
+  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('2D context unavailable for edge sharpening')
+  ctx.drawImage(bitmap, 0, 0)
+  bitmap.close()
+
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = imageData.data
+  const range = ALPHA_HIGH - ALPHA_LOW
+  for (let i = 3; i < data.length; i += 4) {
+    const alpha = data[i]
+    if (alpha <= ALPHA_LOW) data[i] = 0
+    else if (alpha >= ALPHA_HIGH) data[i] = 255
+    else data[i] = Math.round(((alpha - ALPHA_LOW) / range) * 255)
+  }
+  ctx.putImageData(imageData, 0, 0)
+
+  return canvas.convertToBlob({ type: 'image/png' })
+}
+
+/**
  * ONNX Runtime Web (isnet_quint8) background-removal plugin. Model/wasm assets are fetched
  * from IMG.LY's CDN on first use and cached by the browser; only those generic assets cross
  * the network, never the user's image. Inference itself runs in a worker spawned internally
@@ -35,12 +67,14 @@ export const backgroundRemovalPlugin: AiPlugin = {
 
     const sourceBlob = await canvas.convertToBlob({ type: 'image/png' })
 
-    return removeBackground(sourceBlob, {
+    const cutout = await removeBackground(sourceBlob, {
       model: 'isnet_quint8',
       output: { format: 'image/png', quality: 1 },
       progress: (_key, current, total) => {
         if (total > 0) onProgress?.(Math.round((current / total) * 100))
       },
     })
+
+    return sharpenCutoutEdges(cutout)
   },
 }
