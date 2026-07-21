@@ -14,7 +14,18 @@ export const backgroundRemovalPlugin: AiPlugin = {
   run: async ({ bitmap, onProgress }) => {
     // Dynamically imported so the ~24MB onnxruntime-web WASM/JS graph is only ever
     // fetched by users who actually turn on background removal, not on initial page load.
-    const { removeBackground } = await import('@imgly/background-removal')
+    let mod: typeof import('@imgly/background-removal')
+    try {
+      mod = await import('@imgly/background-removal')
+    } catch {
+      // Happens when a tab stays open across a redeploy: the page's own bundle still
+      // references an old content-hashed chunk filename that the new deploy no longer
+      // serves. A reload fetches the current index.html/chunk map and resolves it.
+      throw new Error(
+        '배경 제거 모듈을 불러오지 못했습니다. 페이지가 업데이트되었을 수 있으니 새로고침한 뒤 다시 시도해주세요.',
+      )
+    }
+    const { removeBackground } = mod
 
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
     const ctx = canvas.getContext('2d')
