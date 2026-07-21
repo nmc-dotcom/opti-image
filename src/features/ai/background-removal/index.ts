@@ -32,6 +32,27 @@ async function sharpenCutoutEdges(blob: Blob): Promise<Blob> {
   return canvas.convertToBlob({ type: 'image/png' })
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Dynamic imports of a freshly content-hashed chunk can transiently 404 for a few seconds
+ * right after a deploy while the CDN's edge nodes catch up. Retrying a failed dynamic
+ * import re-issues the network fetch (browsers don't permanently cache a rejected module),
+ * so a short backoff rides out that propagation window instead of failing outright.
+ */
+async function importBackgroundRemoval(retries = 2): Promise<typeof import('@imgly/background-removal')> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await import('@imgly/background-removal')
+    } catch (error) {
+      if (attempt >= retries) throw error
+      await delay(1500 * (attempt + 1))
+    }
+  }
+}
+
 /**
  * ONNX Runtime Web (isnet_quint8) background-removal plugin. Model/wasm assets are fetched
  * from IMG.LY's CDN on first use and cached by the browser; only those generic assets cross
@@ -48,13 +69,14 @@ export const backgroundRemovalPlugin: AiPlugin = {
     // fetched by users who actually turn on background removal, not on initial page load.
     let mod: typeof import('@imgly/background-removal')
     try {
-      mod = await import('@imgly/background-removal')
+      mod = await importBackgroundRemoval()
     } catch {
-      // Happens when a tab stays open across a redeploy: the page's own bundle still
-      // references an old content-hashed chunk filename that the new deploy no longer
-      // serves. A reload fetches the current index.html/chunk map and resolves it.
+      // Either a stale tab across a redeploy (the page's own bundle references an old
+      // content-hashed chunk the new deploy no longer serves) or something client-side
+      // (ad blocker / privacy extension) blocking the request outright — retries above
+      // already rule out a brief CDN propagation blip.
       throw new Error(
-        '배경 제거 모듈을 불러오지 못했습니다. 페이지가 업데이트되었을 수 있으니 새로고침한 뒤 다시 시도해주세요.',
+        '배경 제거 모듈을 불러오지 못했습니다. 페이지를 새로고침해서 다시 시도해보시고, 계속 실패하면 광고 차단 확장 프로그램을 꺼보세요.',
       )
     }
     const { removeBackground } = mod
