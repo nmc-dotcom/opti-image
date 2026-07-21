@@ -146,8 +146,8 @@ export function PreviewCanvas() {
 
           {item.result && !isCropping && (
             <div
-              className="absolute inset-0 overflow-hidden"
-              style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
+              className="checkerboard absolute inset-0 overflow-hidden"
+              style={{ clipPath: `inset(0 0 0 ${sliderPos}%)` }}
             >
               <img
                 src={item.result.url}
