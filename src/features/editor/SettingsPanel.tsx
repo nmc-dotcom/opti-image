@@ -51,9 +51,11 @@ export function SettingsPanel() {
 
   const longestEdge = Math.max(item.source.width, item.source.height)
   const optimizeHint =
-    longestEdge > WEB_OPTIMIZE_LONG_EDGE
-      ? `긴 변 ${WEB_OPTIMIZE_LONG_EDGE}px · JPG 품질 80으로 자동 축소`
-      : 'JPG 품질 80으로 재인코딩 (이미 작은 이미지)'
+    item.settings.resize.mode !== 'none'
+      ? 'JPG 품질 80으로 재인코딩 (현재 사이즈 설정 유지)'
+      : longestEdge > WEB_OPTIMIZE_LONG_EDGE
+        ? `긴 변 ${WEB_OPTIMIZE_LONG_EDGE}px · JPG 품질 80으로 자동 축소`
+        : 'JPG 품질 80으로 재인코딩 (이미 작은 이미지)'
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">

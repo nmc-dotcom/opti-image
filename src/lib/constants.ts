@@ -23,18 +23,22 @@ export const WEB_OPTIMIZE_LONG_EDGE = 2048
 /**
  * One-click "web optimize" preset: convert to JPG at a sensible quality and cap the long edge,
  * which reliably shrinks large photos (e.g. 24MP camera JPEGs) well below their original size.
+ * If the user has already chosen a resize mode, their size settings are left untouched.
  */
 export function webOptimizePreset(settings: EditSettings): EditSettings {
   return {
     ...settings,
     format: 'jpeg',
     quality: 80,
-    resize: {
-      ...settings.resize,
-      mode: 'longEdge',
-      longEdge: WEB_OPTIMIZE_LONG_EDGE,
-      keepAspectRatio: true,
-    },
+    resize:
+      settings.resize.mode !== 'none'
+        ? settings.resize
+        : {
+            ...settings.resize,
+            mode: 'longEdge',
+            longEdge: WEB_OPTIMIZE_LONG_EDGE,
+            keepAspectRatio: true,
+          },
   }
 }
 
