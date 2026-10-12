@@ -1,47 +1,13 @@
 import { useCallback, useRef, useState } from 'react'
 import type { CropRect } from '@/types/image'
+import { getContentRect } from '@/lib/imageCoordinates'
+
+// Shared with the edit (mask/text) overlay; re-exported so existing imports keep working.
+export { getContentRect }
 
 interface Point {
   x: number
   y: number
-}
-
-interface ContentRect {
-  offsetX: number
-  offsetY: number
-  width: number
-  height: number
-}
-
-/**
- * Computes the actual displayed image content box inside the <img> element. Because the image
- * is rendered with `object-contain`, its content can be letterboxed (centered with padding)
- * when the element's box aspect ratio differs from the image's. Crop coordinates must be mapped
- * against this content box, not the element box, or the crop lands on the wrong region.
- */
-export function getContentRect(
-  el: HTMLImageElement,
-  elWidth: number,
-  elHeight: number,
-): ContentRect {
-  const { naturalWidth: nw, naturalHeight: nh } = el
-  if (!nw || !nh) return { offsetX: 0, offsetY: 0, width: elWidth, height: elHeight }
-
-  const elRatio = elWidth / elHeight
-  const imgRatio = nw / nh
-
-  let width: number
-  let height: number
-  if (elRatio > imgRatio) {
-    // Element is wider than the image → padding on left/right.
-    height = elHeight
-    width = elHeight * imgRatio
-  } else {
-    // Element is taller than the image → padding on top/bottom.
-    width = elWidth
-    height = elWidth / imgRatio
-  }
-  return { offsetX: (elWidth - width) / 2, offsetY: (elHeight - height) / 2, width, height }
 }
 
 /**

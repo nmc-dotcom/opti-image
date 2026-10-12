@@ -14,6 +14,11 @@ export default defineConfig({
   worker: {
     format: 'es',
   },
+  optimizeDeps: {
+    // ONNX Runtime Web locates its .wasm via `new URL(..., import.meta.url)`; pre-bundling would
+    // move the JS into .vite/deps and break that relative URL in dev (production is unaffected).
+    exclude: ['onnxruntime-web'],
+  },
   build: {
     target: 'es2022',
   },

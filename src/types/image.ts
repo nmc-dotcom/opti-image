@@ -1,3 +1,5 @@
+import type { RetouchOp, TextLayer } from './editing'
+
 /** Supported output image formats for the 1st MVP. AVIF/BMP/ICO land in phase 2. */
 export type ImageFormat = 'png' | 'jpeg' | 'webp'
 
@@ -36,6 +38,14 @@ export interface EditSettings {
   crop: CropRect | null
   /** AI background removal (ISNet, run client-side before the crop/rotate/resize pipeline). */
   backgroundRemoval: boolean
+  /**
+   * Applied object/text removals, in order. Metadata only — the inpainted pixels live once in
+   * the edit store (keyed by op id), so undo history stays small even for 8K images.
+   * Composited onto the source before background removal and the crop/rotate/resize stages.
+   */
+  retouch: RetouchOp[]
+  /** Editable text drawn on top (after background removal, before crop), in source pixels. */
+  textLayers: TextLayer[]
 }
 
 export type ProcessStatus = 'idle' | 'queued' | 'processing' | 'done' | 'error'

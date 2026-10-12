@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { GripVertical } from 'lucide-react'
 import { useImageStore } from '@/store/useImageStore'
 import { useUiStore } from '@/store/useUiStore'
 import { Spinner } from '@/components/ui/spinner'
 import { getContentRect, useCropOverlay } from '@/hooks/useCropOverlay'
 import { cn } from '@/lib/utils'
+
+// Code-split with the Edit panel: only loaded once the Edit tool is opened.
+const EditOverlay = lazy(() =>
+  import('./components/EditOverlay').then((m) => ({ default: m.EditOverlay })),
+)
 
 export function PreviewCanvas() {
   const activeId = useImageStore((s) => s.activeId)
@@ -95,12 +100,15 @@ export function PreviewCanvas() {
   }
 
   const isCropping = activeTool === 'crop'
+  const isEditing = activeTool === 'edit'
+  // Crop and Edit both work in source-pixel space on the un-transformed source image.
+  const isSourceSpace = isCropping || isEditing
 
-  // While cropping, the box always matches the source so pointer math maps 1:1 to
+  // While cropping/editing, the box always matches the source so pointer math maps 1:1 to
   // the original image; otherwise it matches the processed result so the after
   // image is never squeezed into a mismatched (pre-rotate/crop) aspect ratio.
-  const boxWidth = isCropping || !item.result ? item.source.width : item.result.width
-  const boxHeight = isCropping || !item.result ? item.source.height : item.result.height
+  const boxWidth = isSourceSpace || !item.result ? item.source.width : item.result.width
+  const boxHeight = isSourceSpace || !item.result ? item.source.height : item.result.height
 
   // Map the committed crop (natural pixels) back onto the displayed content box, so a crop set
   // via a ratio preset or a previous drag stays visible while editing.
@@ -144,7 +152,7 @@ export function PreviewCanvas() {
             onLoad={measureContent}
           />
 
-          {item.result && !isCropping && (
+          {item.result && !isSourceSpace && (
             <div
               className="checkerboard absolute inset-0 overflow-hidden"
               style={{ clipPath: `inset(0 0 0 ${sliderPos}%)` }}
@@ -158,7 +166,7 @@ export function PreviewCanvas() {
             </div>
           )}
 
-          {item.result && !isCropping && (
+          {item.result && !isSourceSpace && (
             <>
               <div
                 className="absolute inset-y-0 w-0.5 cursor-ew-resize bg-primary"
@@ -212,11 +220,17 @@ export function PreviewCanvas() {
             </div>
           )}
 
+          {isEditing && contentBox.width > 0 && (
+            <Suspense fallback={null}>
+              <EditOverlay item={item} imgRef={imgRef} contentBox={contentBox} />
+            </Suspense>
+          )}
+
           {item.status === 'processing' && (
             <div
               className={cn(
                 'absolute inset-0 flex items-center justify-center bg-background/40',
-                isCropping && 'hidden',
+                isSourceSpace && 'hidden',
               )}
             >
               <Spinner className="h-6 w-6" />

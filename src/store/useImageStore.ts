@@ -3,6 +3,8 @@ import { DEFAULT_EDIT_SETTINGS, MAX_HISTORY_LENGTH } from '@/lib/constants'
 import { createSourceImage } from '@/lib/loadImage'
 import { imageWorkerPool } from '@/workers/imageWorkerClient'
 import { backgroundRemovalPlugin } from '@/features/ai/background-removal'
+import { useEditStore } from '@/store/useEditStore'
+import { composeRetouchPatches } from '@/lib/retouch'
 import type {
   EditSettings,
   ImageItem,
@@ -45,6 +47,15 @@ interface ImageState {
 
 function createLogEntry(level: LogEntry['level'], message: string): LogEntry {
   return { id: crypto.randomUUID(), timestamp: Date.now(), level, message }
+}
+
+/** Every RetouchOp id still reachable from the item's current settings or its undo/redo stack. */
+function referencedRetouchIds(item: ImageItem): Set<string> {
+  const ids = new Set<string>()
+  for (const settings of [item.settings, ...item.history]) {
+    for (const op of settings.retouch) ids.add(op.id)
+  }
+  return ids
 }
 
 function setStatus(images: ImageItem[], id: string, status: ProcessStatus): ImageItem[] {
@@ -109,6 +120,7 @@ export const useImageStore = create<ImageState>((set, get) => ({
       const selectedIds = new Set(state.selectedIds)
       selectedIds.delete(id)
       requestSeq.delete(id)
+      useEditStore.getState().forgetImage(id)
       return {
         images,
         selectedIds,
@@ -124,6 +136,7 @@ export const useImageStore = create<ImageState>((set, get) => ({
       if (item.result) URL.revokeObjectURL(item.result.url)
     })
     requestSeq.clear()
+    useEditStore.getState().forgetAll()
     set({ images: [], activeId: null, selectedIds: new Set(), batchProgress: null })
   },
 
@@ -161,6 +174,9 @@ export const useImageStore = create<ImageState>((set, get) => ({
         return { ...item, history: nextHistory, historyIndex: nextHistory.length - 1 }
       }),
     }))
+    // Committing discards the redo branch; free retouch patches only that branch referenced.
+    const committed = get().images.find((i) => i.id === id)
+    if (committed) useEditStore.getState().prunePatches(id, referencedRetouchIds(committed))
   },
 
   undo: (id) => {
@@ -197,6 +213,21 @@ export const useImageStore = create<ImageState>((set, get) => ({
     try {
       let bitmap = await createImageBitmap(item.source.file)
       let sourceType = item.source.type
+
+      // Object/text removals are stored as small inpainted patches in source coordinates;
+      // composite them first so every later stage (background removal, text layers, crop,
+      // rotate, resize) sees the retouched image.
+      if (requestedSettings.retouch.length > 0) {
+        const { patches } = useEditStore.getState()
+        bitmap = await composeRetouchPatches(
+          bitmap,
+          requestedSettings.retouch.map((op) => patches[op.id]).filter(Boolean),
+        )
+        if (!isLatest()) {
+          bitmap.close()
+          return
+        }
+      }
 
       if (requestedSettings.backgroundRemoval) {
         set({ aiProgress: { label: '배경 제거 모델 로딩 중', percent: 0 } })

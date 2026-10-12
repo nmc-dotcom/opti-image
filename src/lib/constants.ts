@@ -15,6 +15,8 @@ export const DEFAULT_EDIT_SETTINGS: EditSettings = {
   flip: 'none',
   crop: null,
   backgroundRemoval: false,
+  retouch: [],
+  textLayers: [],
 }
 
 /** Long edge (px) above which "웹 최적화" downsizes an image. 2048px covers most web/sharing needs. */

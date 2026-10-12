@@ -2,6 +2,7 @@
   "name": "opti-image",
   "private": true,
   "version": "0.0.0",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -30,10 +31,12 @@
     "clsx": "^2.1.1",
     "jszip": "^3.10.1",
     "lucide-react": "^1.24.0",
+    "onnxruntime-web": "1.21.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.3.2",
+    "tesseract.js": "^7.0.0",
     "uuid": "^14.0.1",
     "zustand": "^5.0.14"
   },

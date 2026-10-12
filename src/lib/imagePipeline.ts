@@ -1,4 +1,5 @@
 import type { EditSettings, ResizeSettings } from '@/types/image'
+import { drawTextLayers } from './textRendering'
 
 const MIME_BY_FORMAT: Record<EditSettings['format'], string> = {
   png: 'image/png',
@@ -53,8 +54,10 @@ export function computeResizedDimensions(
 }
 
 /**
- * Runs the full edit pipeline (crop -> rotate -> flip -> resize) on a bitmap using an
- * OffscreenCanvas, and returns the resulting canvas ready for encoding.
+ * Runs the full edit pipeline (text layers -> crop -> rotate -> flip -> resize) on a bitmap
+ * using an OffscreenCanvas, and returns the resulting canvas ready for encoding. Text layers are
+ * in source-pixel coordinates, so they are drawn before cropping and then follow every
+ * geometric transform exactly like the image pixels underneath them.
  */
 export function renderEditedCanvas(
   bitmap: ImageBitmap,
@@ -62,11 +65,21 @@ export function renderEditedCanvas(
 ): OffscreenCanvas {
   const crop = settings.crop ?? { x: 0, y: 0, width: bitmap.width, height: bitmap.height }
 
+  let source: ImageBitmap | OffscreenCanvas = bitmap
+  if (settings.textLayers.length > 0) {
+    const textCanvas = new OffscreenCanvas(bitmap.width, bitmap.height)
+    const textCtx = textCanvas.getContext('2d')
+    if (!textCtx) throw new Error('2D context unavailable for text stage')
+    textCtx.drawImage(bitmap, 0, 0)
+    drawTextLayers(textCtx, settings.textLayers)
+    source = textCanvas
+  }
+
   const cropCanvas = new OffscreenCanvas(crop.width, crop.height)
   const cropCtx = cropCanvas.getContext('2d')
   if (!cropCtx) throw new Error('2D context unavailable for crop stage')
   cropCtx.drawImage(
-    bitmap,
+    source,
     crop.x,
     crop.y,
     crop.width,

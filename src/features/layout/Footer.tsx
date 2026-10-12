@@ -2,6 +2,8 @@ import { Lock } from 'lucide-react'
 
 const HOLORADO_HOME = 'https://holorado.me'
 const PRIVACY_URL = 'https://holorado.me/privacy'
+// AGPL-3.0 §13: users interacting with this app over a network are offered its source code.
+const SOURCE_URL = 'https://github.com/nmc-dotcom/opti-image'
 
 /**
  * Minimal app footer: maker attribution (홀로라도) and a privacy-policy link, kept slim so it
@@ -35,6 +37,16 @@ export function Footer() {
           className="transition-colors hover:text-foreground"
         >
           개인정보처리방침
+        </a>
+        <span aria-hidden>·</span>
+        <a
+          href={SOURCE_URL}
+          target="_blank"
+          rel="noreferrer"
+          title="AGPL-3.0 라이선스로 공개된 소스 코드"
+          className="transition-colors hover:text-foreground"
+        >
+          소스 코드 (AGPL-3.0)
         </a>
       </div>
     </footer>

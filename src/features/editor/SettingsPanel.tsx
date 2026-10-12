@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Download, Redo2, Sparkles, Undo2 } from 'lucide-react'
 import { useImageStore } from '@/store/useImageStore'
 import { useUiStore, type EditorTool } from '@/store/useUiStore'
@@ -9,9 +10,14 @@ import { FormatPanel } from './panels/FormatPanel'
 import { TransformPanel } from './panels/TransformPanel'
 import { CropPanel } from './panels/CropPanel'
 import { BackgroundRemovalPanel } from './panels/BackgroundRemovalPanel'
+import { Spinner } from '@/components/ui/spinner'
 import { RenamePanel } from './panels/RenamePanel'
 import { downloadSingleImage } from '@/lib/download'
 import { WEB_OPTIMIZE_LONG_EDGE, webOptimizePreset } from '@/lib/constants'
+
+// The Edit tool (masking, OCR, text layers) is opt-in, so its UI is code-split off the
+// initial bundle and fetched the first time the tab is opened.
+const EditPanel = lazy(() => import('./panels/EditPanel').then((m) => ({ default: m.EditPanel })))
 
 const TOOL_TABS: { value: EditorTool; label: string }[] = [
   { value: 'resize', label: 'Resize' },
@@ -19,6 +25,7 @@ const TOOL_TABS: { value: EditorTool; label: string }[] = [
   { value: 'transform', label: 'Rotate' },
   { value: 'crop', label: 'Crop' },
   { value: 'ai', label: 'AI' },
+  { value: 'edit', label: 'Edit' },
   { value: 'rename', label: 'Rename' },
 ]
 
@@ -96,9 +103,9 @@ export function SettingsPanel() {
       </div>
 
       <Tabs value={activeTool} onValueChange={(v) => setActiveTool(v as EditorTool)}>
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-7">
           {TOOL_TABS.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value} className="text-xs">
+            <TabsTrigger key={tab.value} value={tab.value} className="px-1 text-xs">
               {tab.label}
             </TabsTrigger>
           ))}
@@ -117,6 +124,11 @@ export function SettingsPanel() {
         </TabsContent>
         <TabsContent value="ai">
           <BackgroundRemovalPanel />
+        </TabsContent>
+        <TabsContent value="edit">
+          <Suspense fallback={<Spinner className="mx-auto my-6 h-5 w-5" />}>
+            <EditPanel />
+          </Suspense>
         </TabsContent>
         <TabsContent value="rename">
           <RenamePanel />

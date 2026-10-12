@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 
-export type EditorTool = 'resize' | 'format' | 'transform' | 'crop' | 'ai' | 'rename'
+export type EditorTool =
+  | 'resize'
+  | 'format'
+  | 'transform'
+  | 'crop'
+  | 'ai'
+  | 'edit'
+  | 'rename'
 
 interface UiState {
   activeTool: EditorTool
