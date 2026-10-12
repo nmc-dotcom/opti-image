@@ -53,7 +53,12 @@ export function EditOverlay({ item, imgRef, contentBox }: EditOverlayProps) {
         )
       })}
 
-      <TextOverlay item={item} contentBox={contentBox} interactive={mode === 'text'} />
+      <TextOverlay
+        item={item}
+        imgRef={imgRef}
+        contentBox={contentBox}
+        interactive={mode === 'text'}
+      />
 
       {mode === 'remove' && <MaskLayer item={item} imgRef={imgRef} contentBox={contentBox} />}
     </div>

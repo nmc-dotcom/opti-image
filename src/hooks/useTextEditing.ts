@@ -10,7 +10,7 @@ import { FONT_OPTIONS, measureTextLayer } from '@/lib/textRendering'
 import { clampRect } from '@/lib/mask'
 import { runRemoval } from './useRetouch'
 import { toast } from './useToast'
-import type { InpaintMethod, OcrTextRegion, TextLayer } from '@/types/editing'
+import type { InpaintMethod, OcrTextRegion, Rect, TextLayer } from '@/types/editing'
 import type { ImageItem } from '@/types/image'
 
 /**
@@ -79,6 +79,85 @@ export async function runOcr(
         `${item.source.name}: 텍스트 ${mapped.length}개 인식 (${Math.round(performance.now() - started)}ms)`,
       )
     return mapped
+  } finally {
+    useEditStore.getState().setJob(null)
+  }
+}
+
+/**
+ * OCR of just the area the user dragged out. The crop is read at (up to) full resolution with the
+ * same multi-pass engine, and each text box found is tightened to the glyph ink.
+ *
+ * If nothing is recognized the area itself becomes a region with EMPTY text: the user can still
+ * type the replacement and the original pixels under the area are erased and rebuilt as usual,
+ * so a failed recognition never blocks the edit.
+ */
+export async function runOcrArea(
+  imageId: string,
+  area: Rect,
+  lang: OcrLanguage,
+): Promise<{ regions: OcrTextRegion[]; recognized: boolean }> {
+  const edit = useEditStore.getState()
+  if (edit.job) throw new Error('이미 다른 편집 작업이 진행 중입니다.')
+  const item = getItem(imageId)
+  const rect = clampRect(area, 0, item.source.width, item.source.height)
+  if (!rect || rect.width < 6 || rect.height < 6) throw new Error('선택한 영역이 너무 작습니다.')
+  const target = fitWithin(rect.width, rect.height, OCR_MAX_EDGE)
+
+  const started = performance.now()
+  try {
+    edit.setJob({ label: 'OCR 준비 중', percent: 0 })
+    const canvas = await renderRetouchedRegion(
+      item.source.file,
+      currentPatches(item),
+      rect,
+      target.width,
+      target.height,
+    )
+    const pixels =
+      canvas
+        .getContext('2d', { willReadFrequently: true })
+        ?.getImageData(0, 0, target.width, target.height) ?? null
+    const found = await ocrPlugin.run({
+      bitmap: canvas.transferToImageBitmap(),
+      options: { lang, granularity: 'line' },
+      onProgress: (percent) =>
+        useEditStore
+          .getState()
+          .setJob({ label: percent < 50 ? 'OCR 엔진 로딩 중' : '텍스트 인식 중', percent }),
+    })
+
+    const sx = rect.width / target.width
+    const sy = rect.height / target.height
+    const toSource = (box: Rect): Rect => ({
+      x: rect.x + box.x * sx,
+      y: rect.y + box.y * sy,
+      width: box.width * sx,
+      height: box.height * sy,
+    })
+    const refine = (box: Rect) => (pixels ? refineTextBox(pixels, box) : box)
+
+    const recognized = found.length > 0
+    const regions: OcrTextRegion[] = recognized
+      ? found.map((r) => ({ ...r, bbox: toSource(refine(r.bbox)) }))
+      : [
+          {
+            id: crypto.randomUUID(),
+            text: '',
+            confidence: 0,
+            bbox: toSource(refine({ x: 0, y: 0, width: target.width, height: target.height })),
+          },
+        ]
+
+    useEditStore.getState().setOcrRegions(imageId, regions)
+    useEditStore.getState().selectRegion(imageId, regions[0].id)
+    useImageStore
+      .getState()
+      .log(
+        'info',
+        `${item.source.name}: 선택 영역 ${recognized ? `텍스트 ${regions.length}개 인식` : '인식 실패 (직접 입력)'} (${Math.round(performance.now() - started)}ms)`,
+      )
+    return { regions, recognized }
   } finally {
     useEditStore.getState().setJob(null)
   }
@@ -248,6 +327,24 @@ export function useTextEditing() {
     [],
   )
 
+  const recognizeArea = useCallback(async (imageId: string, area: Rect, lang: OcrLanguage) => {
+    try {
+      const result = await runOcrArea(imageId, area, lang)
+      toast(
+        result.recognized
+          ? { title: `텍스트 ${result.regions.length}개를 찾았습니다` }
+          : {
+              title: '글자를 인식하지 못했습니다',
+              description: '선택한 영역에 들어갈 새 텍스트를 직접 입력해 수정할 수 있습니다.',
+            },
+      )
+      return result
+    } catch (error) {
+      reportError('텍스트 인식 실패', error)
+      return null
+    }
+  }, [])
+
   const replace = useCallback(
     async (
       imageId: string,
@@ -266,5 +363,5 @@ export function useTextEditing() {
     [],
   )
 
-  return { job, busy: job !== null, recognize, replace }
+  return { job, busy: job !== null, recognize, recognizeArea, replace }
 }

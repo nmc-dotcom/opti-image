@@ -4,6 +4,7 @@ import {
   AlignLeft,
   AlignRight,
   Bold,
+  BoxSelect,
   Plus,
   ScanText,
   Trash2,
@@ -64,8 +65,14 @@ export function TextEditPanel() {
   const selectRegion = useEditStore((s) => s.selectRegion)
   const selectLayer = useEditStore((s) => s.selectLayer)
   const { job, busy, recognize } = useTextEditing()
-  const [lang, setLang] = useState<OcrLanguage>('kor+eng')
+  const lang = useEditStore((s) => s.ocrLang)
+  const setLang = useEditStore((s) => s.setOcrLang)
+  const areaMode = useEditStore((s) => s.ocrAreaMode)
+  const setAreaMode = useEditStore((s) => s.setOcrAreaMode)
   const [granularity, setGranularity] = useState<OcrGranularity>('line')
+
+  // Leaving the tab must not leave the preview stuck in "drag to pick text" mode.
+  useEffect(() => () => setAreaMode(false), [setAreaMode])
 
   if (!activeId || !layers) return null
   const selectedRegion = ocrRegions?.find((r) => r.id === selectedRegionId) ?? null
@@ -74,40 +81,61 @@ export function TextEditPanel() {
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <div className="grid grid-cols-2 gap-1.5">
-          <Select value={lang} onValueChange={(v) => setLang(v as OcrLanguage)}>
-            <SelectTrigger className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {LANGUAGES.map((l) => (
-                <SelectItem key={l.value} value={l.value} className="text-xs">
-                  {l.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="grid grid-cols-2 gap-1">
-            {(['line', 'word'] as const).map((g) => (
-              <Button
-                key={g}
-                size="sm"
-                variant={granularity === g ? 'default' : 'outline'}
-                onClick={() => setGranularity(g)}
-              >
-                {g === 'line' ? '줄' : '단어'}
-              </Button>
+        <Select value={lang} onValueChange={(v) => setLang(v as OcrLanguage)}>
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {LANGUAGES.map((l) => (
+              <SelectItem key={l.value} value={l.value} className="text-xs">
+                {l.label}
+              </SelectItem>
             ))}
-          </div>
-        </div>
+          </SelectContent>
+        </Select>
+
         <Button
           className="w-full"
-          variant="secondary"
+          variant={areaMode ? 'default' : 'secondary'}
           disabled={busy}
-          onClick={() => recognize(activeId, lang, granularity)}
+          onClick={() => setAreaMode(!areaMode)}
         >
-          {busy ? <Spinner className="h-4 w-4" /> : <ScanText />} 텍스트 인식 (OCR)
+          {busy ? <Spinner className="h-4 w-4" /> : <BoxSelect />}
+          {areaMode ? '영역 선택 취소 (Esc)' : '영역 지정해서 글자 수정'}
         </Button>
+        <p className="text-[11px] text-muted-foreground">
+          {areaMode
+            ? '미리보기에서 수정할 글자 위를 드래그해 영역을 지정하세요.'
+            : '수정할 글자를 미리보기에서 드래그해 지정하면 그 영역만 인식합니다. 인식하지 못해도 새 텍스트를 직접 입력해 교체할 수 있습니다.'}
+        </p>
+
+        <details className="rounded-md border px-2 py-1.5 text-xs">
+          <summary className="cursor-pointer select-none text-muted-foreground">
+            이미지 전체에서 찾기
+          </summary>
+          <div className="mt-2 grid grid-cols-[1fr_auto] gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => recognize(activeId, lang, granularity)}
+            >
+              <ScanText /> 전체 인식 (OCR)
+            </Button>
+            <div className="grid grid-cols-2 gap-1">
+              {(['line', 'word'] as const).map((g) => (
+                <Button
+                  key={g}
+                  size="sm"
+                  variant={granularity === g ? 'default' : 'outline'}
+                  onClick={() => setGranularity(g)}
+                >
+                  {g === 'line' ? '줄' : '단어'}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </details>
         <p className="text-[11px] text-muted-foreground">
           처음 실행 시 OCR 엔진과 언어 데이터(약 8MB)를 내려받습니다. 이미지는 기기 밖으로
           전송되지 않습니다.
@@ -132,10 +160,14 @@ export function TextEditPanel() {
                     )}
                     onClick={() => selectRegion(activeId, region.id)}
                   >
-                    <span className="flex-1 truncate">{region.text}</span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {region.confidence}%
+                    <span className={cn('flex-1 truncate', !region.text && 'text-muted-foreground')}>
+                      {region.text || '(글자 인식 안 됨 — 직접 입력)'}
                     </span>
+                    {region.text && (
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {region.confidence}%
+                      </span>
+                    )}
                   </button>
                 </li>
               ))}
@@ -213,7 +245,14 @@ function RegionEditor({ imageId, region }: { imageId: string; region: OcrTextReg
     <div className="space-y-3 rounded-md border p-3">
       <div className="space-y-1">
         <Label className="text-[11px] text-muted-foreground">기존 텍스트</Label>
-        <p className="break-all text-xs">{region.text}</p>
+        <p className="break-all text-xs">
+          {region.text || (
+            <span className="text-muted-foreground">
+              글자를 인식하지 못했습니다. 아래에 새 텍스트를 입력하면 선택한 영역이 지워지고 새
+              텍스트로 바뀝니다.
+            </span>
+          )}
+        </p>
       </div>
       <div className="space-y-1">
         <Label htmlFor="replace-text">새 텍스트</Label>

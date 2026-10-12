@@ -9,6 +9,8 @@ import type {
   RetouchPatch,
 } from '@/types/editing'
 
+import type { OcrLanguage } from '@/features/ai/ocr/types'
+
 export type EditMode = 'remove' | 'text'
 
 /** Per-image working state that is NOT part of the image's settings history. */
@@ -46,6 +48,10 @@ interface EditState {
   /** Outward feather in source pixels, applied when a removal is executed. */
   feather: number
   method: InpaintMethod
+  /** Language set for OCR (shared by the whole-image and the drag-an-area flows). */
+  ocrLang: OcrLanguage
+  /** While true, a drag on the preview selects the area whose text should be recognized. */
+  ocrAreaMode: boolean
 
   byImage: Record<string, ImageEditState>
   /** Inpainted pixels, keyed by RetouchOp id. Referenced (not copied) by settings history. */
@@ -61,6 +67,8 @@ interface EditState {
   setBrushEdge: (edge: BrushEdge) => void
   setFeather: (feather: number) => void
   setMethod: (method: InpaintMethod) => void
+  setOcrLang: (lang: OcrLanguage) => void
+  setOcrAreaMode: (active: boolean) => void
 
   addStroke: (imageId: string, stroke: MaskStroke) => void
   undoStroke: (imageId: string) => boolean
@@ -105,6 +113,8 @@ export const useEditStore = create<EditState>((set, get) => {
     brushEdge: 'hard',
     feather: 4,
     method: 'classic',
+    ocrLang: 'kor+eng',
+    ocrAreaMode: false,
 
     byImage: {},
     patches: {},
@@ -118,6 +128,8 @@ export const useEditStore = create<EditState>((set, get) => {
     setBrushEdge: (brushEdge) => set({ brushEdge }),
     setFeather: (feather) => set({ feather }),
     setMethod: (method) => set({ method }),
+    setOcrLang: (ocrLang) => set({ ocrLang }),
+    setOcrAreaMode: (ocrAreaMode) => set({ ocrAreaMode }),
 
     addStroke: (imageId, stroke) =>
       patchImage(imageId, (s) => ({ strokes: [...s.strokes, stroke], redoStrokes: [] })),
