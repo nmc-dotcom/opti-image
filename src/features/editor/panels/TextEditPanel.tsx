@@ -15,6 +15,7 @@ import { useEditStore, getImageEditState } from '@/store/useEditStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Slider } from '@/components/ui/slider'
 import { Spinner } from '@/components/ui/spinner'
 import {
   Select,
@@ -225,6 +226,7 @@ function RegionEditor({ imageId, region }: { imageId: string; region: OcrTextReg
     fontSize: Math.max(8, Math.round(region.bbox.height)),
     fontWeight: 'normal',
     color: '#000000',
+    letterSpacing: 0,
     textAlign: 'left',
   })
 
@@ -305,7 +307,7 @@ function LayerEditor({ imageId, layer }: { imageId: string; layer: TextLayer }) 
           update(patch)
           // Discrete controls (font, bold, align) commit immediately; numeric/color inputs
           // commit on blur via onCommit.
-          if (!('fontSize' in patch) && !('color' in patch)) commit()
+          if (!('fontSize' in patch) && !('color' in patch) && !('letterSpacing' in patch)) commit()
         }}
         onCommit={commit}
       />
@@ -379,6 +381,37 @@ function StyleFields({
         >
           <Bold />
         </Button>
+      </div>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <Label className="text-[11px] text-muted-foreground">자간 (글자 좌우 간격)</Label>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              {style.letterSpacing ?? 0}px
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-5 px-1.5 text-[10px]"
+              disabled={!style.letterSpacing}
+              onClick={() => {
+                onChange({ letterSpacing: 0 })
+                onCommit?.()
+              }}
+            >
+              초기화
+            </Button>
+          </div>
+        </div>
+        <Slider
+          aria-label="자간"
+          min={-Math.max(1, Math.round(style.fontSize * 0.15))}
+          max={Math.max(2, Math.round(style.fontSize * 0.6))}
+          step={0.5}
+          value={[style.letterSpacing ?? 0]}
+          onValueChange={([v]) => onChange({ letterSpacing: v })}
+          onValueCommit={() => onCommit?.()}
+        />
       </div>
       <div className="grid grid-cols-3 gap-1.5">
         {ALIGNS.map((a) => (

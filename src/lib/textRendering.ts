@@ -57,6 +57,46 @@ export function capRatio(ctx: Ctx2D, layer: Pick<TextLayer, 'fontWeight' | 'font
   return ratio
 }
 
+/** Characters of `text` as the user sees them (a surrogate pair is one character). */
+function glyphs(text: string): string[] {
+  return Array.from(text)
+}
+
+/** Rendered width of one line, including `spacing` between consecutive characters. */
+function lineWidth(ctx: Ctx2D, line: string, spacing: number): number {
+  if (!spacing) return ctx.measureText(line).width
+  const chars = glyphs(line)
+  let width = 0
+  for (const ch of chars) width += ctx.measureText(ch).width
+  return width + spacing * Math.max(0, chars.length - 1)
+}
+
+/**
+ * Draws one line with letter spacing. `ctx.letterSpacing` would be simpler but is missing in some
+ * browsers and in some OffscreenCanvas implementations, and the preview and the export must agree
+ * exactly — so characters are placed one by one, which behaves the same everywhere. Spacing 0 never
+ * takes this path.
+ */
+function fillSpacedLine(
+  ctx: Ctx2D,
+  line: string,
+  anchorX: number,
+  baseline: number,
+  align: CanvasTextAlign,
+  spacing: number,
+) {
+  const total = lineWidth(ctx, line, spacing)
+  let x =
+    align === 'center' ? anchorX - total / 2 : align === 'right' || align === 'end' ? anchorX - total : anchorX
+  const previousAlign = ctx.textAlign
+  ctx.textAlign = 'left'
+  for (const ch of glyphs(line)) {
+    ctx.fillText(ch, x, baseline)
+    x += ctx.measureText(ch).width + spacing
+  }
+  ctx.textAlign = previousAlign
+}
+
 /**
  * Draws one text layer in SOURCE pixel space; callers scale the context for previews. Text is
  * aligned horizontally inside the layer box and its cap height is centered vertically on the
@@ -84,7 +124,12 @@ export function drawTextLayer(ctx: Ctx2D, layer: TextLayer) {
         ? layer.width / 2
         : -layer.width / 2
   const firstBaseline = -((lines.length - 1) * lineHeight) / 2 + cap / 2
-  lines.forEach((line, i) => ctx.fillText(line, anchorX, firstBaseline + i * lineHeight))
+  const spacing = layer.letterSpacing ?? 0
+  lines.forEach((line, i) => {
+    const baseline = firstBaseline + i * lineHeight
+    if (spacing) fillSpacedLine(ctx, line, anchorX, baseline, layer.textAlign, spacing)
+    else ctx.fillText(line, anchorX, baseline)
+  })
   ctx.restore()
 }
 
@@ -104,7 +149,8 @@ export function measureTextLayer(layer: TextLayer): Rect {
   let textWidth = 0
   if (measureCtx) {
     measureCtx.font = fontString(layer)
-    for (const line of lines) textWidth = Math.max(textWidth, measureCtx.measureText(line).width)
+    const spacing = layer.letterSpacing ?? 0
+    for (const line of lines) textWidth = Math.max(textWidth, lineWidth(measureCtx, line, spacing))
   } else {
     textWidth = layer.fontSize * 0.6 * Math.max(...lines.map((l) => l.length))
   }

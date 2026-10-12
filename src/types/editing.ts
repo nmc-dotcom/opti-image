@@ -97,6 +97,11 @@ export interface TextLayer {
   fontSize: number
   fontWeight: 'normal' | 'bold'
   color: string
+  /**
+   * Extra space between letters, in source pixels (tracking). Negative tightens. 0 = the font's
+   * normal advance, drawn with a single fillText so kerning/ligatures are untouched.
+   */
+  letterSpacing: number
   textAlign: CanvasTextAlign
   /** Degrees, around the box center. */
   rotation: number

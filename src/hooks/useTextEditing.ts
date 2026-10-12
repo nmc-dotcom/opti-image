@@ -178,18 +178,19 @@ export async function guessTextStyle(
 ): Promise<TextStyleGuess> {
   const item = getItem(imageId)
   const fontSize = estimateFontSize(region.text, region.bbox.height, fontFamily, fontWeight)
+  const fallback = { fontSize, color: '#000000', background: '#ffffff' }
   const rect = clampRect(region.bbox, 2, item.source.width, item.source.height)
-  if (!rect) return { fontSize, color: '#000000', background: '#ffffff' }
+  if (!rect) return fallback
   const canvas = await renderRetouchedRegion(item.source.file, currentPatches(item), rect)
   const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  if (!ctx) return { fontSize, color: '#000000', background: '#ffffff' }
+  if (!ctx) return fallback
   const colors = estimateTextColors(ctx.getImageData(0, 0, rect.width, rect.height))
   return { fontSize, color: colors.text, background: colors.background }
 }
 
 export type TextLayerStyle = Pick<
   TextLayer,
-  'fontFamily' | 'fontSize' | 'fontWeight' | 'color' | 'textAlign'
+  'fontFamily' | 'fontSize' | 'fontWeight' | 'color' | 'letterSpacing' | 'textAlign'
 >
 
 /**
@@ -256,6 +257,7 @@ export function addTextLayer(imageId: string, text = '텍스트'): TextLayer {
     fontSize,
     fontWeight: 'bold',
     color: '#ffffff',
+    letterSpacing: 0,
     textAlign: 'center',
     rotation: 0,
   }
