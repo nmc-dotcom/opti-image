@@ -2,7 +2,7 @@ import { useCallback } from 'react'
 import { useImageStore } from '@/store/useImageStore'
 import { useEditStore } from '@/store/useEditStore'
 import { ocrPlugin } from '@/features/ai/ocr'
-import type { OcrGranularity, OcrLanguage } from '@/features/ai/ocr/types'
+import type { OcrGranularity } from '@/features/ai/ocr/types'
 import { fitWithin } from '@/lib/inpaintingCrop'
 import { renderRetouchedRegion } from '@/lib/retouch'
 import { estimateFontSize, estimateTextColors, refineTextBox } from '@/lib/textStyle'
@@ -14,7 +14,7 @@ import type { InpaintMethod, OcrTextRegion, Rect, TextLayer } from '@/types/edit
 import type { ImageItem } from '@/types/image'
 
 /**
- * Tesseract works best around 20-40px text; beyond this long edge an 8K photo only costs time and
+ * Beyond this long edge an 8K photo only costs OCR time and
  * memory, so OCR runs on a downscaled copy and boxes are mapped back to source pixels.
  */
 const OCR_MAX_EDGE = 3200
@@ -30,10 +30,16 @@ function currentPatches(item: ImageItem) {
   return item.settings.retouch.map((op) => patches[op.id]).filter((p) => p !== undefined)
 }
 
+/** Progress label for the OCR plugin's 0-100 (download 0-70, init 70-80, recognition 80-100). */
+function ocrLabel(percent: number) {
+  if (percent < 70) return 'OCR 모델 다운로드 중'
+  if (percent < 80) return 'OCR 모델 초기화 중'
+  return '텍스트 인식 중'
+}
+
 /** OCR over the current retouched image (source + applied removals, without text layers). */
 export async function runOcr(
   imageId: string,
-  lang: OcrLanguage,
   granularity: OcrGranularity,
 ): Promise<OcrTextRegion[]> {
   const edit = useEditStore.getState()
@@ -56,11 +62,11 @@ export async function runOcr(
     const pixels = ctx2d?.getImageData(0, 0, target.width, target.height) ?? null
     const regions = await ocrPlugin.run({
       bitmap: canvas.transferToImageBitmap(),
-      options: { lang, granularity },
+      options: { granularity },
       onProgress: (percent) =>
         useEditStore
           .getState()
-          .setJob({ label: percent < 50 ? 'OCR 엔진 로딩 중' : '텍스트 인식 중', percent }),
+          .setJob({ label: ocrLabel(percent), percent }),
     })
     const sx = srcW / target.width
     const sy = srcH / target.height
@@ -95,7 +101,6 @@ export async function runOcr(
 export async function runOcrArea(
   imageId: string,
   area: Rect,
-  lang: OcrLanguage,
 ): Promise<{ regions: OcrTextRegion[]; recognized: boolean }> {
   const edit = useEditStore.getState()
   if (edit.job) throw new Error('이미 다른 편집 작업이 진행 중입니다.')
@@ -118,14 +123,23 @@ export async function runOcrArea(
       canvas
         .getContext('2d', { willReadFrequently: true })
         ?.getImageData(0, 0, target.width, target.height) ?? null
-    const found = await ocrPlugin.run({
-      bitmap: canvas.transferToImageBitmap(),
-      options: { lang, granularity: 'line' },
-      onProgress: (percent) =>
-        useEditStore
-          .getState()
-          .setJob({ label: percent < 50 ? 'OCR 엔진 로딩 중' : '텍스트 인식 중', percent }),
+    const onProgress = (percent: number) =>
+      useEditStore.getState().setJob({ label: ocrLabel(percent), percent })
+    // Find the text lines inside the area first (the area may hold several lines, or extra
+    // margin). If the detector sees nothing — tiny or very stylised text — the user's drag is
+    // itself the best hint of where text is, so read the whole area as one line.
+    let found = await ocrPlugin.run({
+      bitmap: await createImageBitmap(canvas),
+      options: { granularity: 'line' },
+      onProgress,
     })
+    if (found.length === 0) {
+      found = await ocrPlugin.run({
+        bitmap: await createImageBitmap(canvas),
+        options: { granularity: 'line', layout: 'single-line', minConfidence: 40 },
+        onProgress,
+      })
+    }
 
     const sx = rect.width / target.width
     const sy = rect.height / target.height
@@ -314,9 +328,9 @@ export function useTextEditing() {
   const job = useEditStore((s) => s.job)
 
   const recognize = useCallback(
-    async (imageId: string, lang: OcrLanguage, granularity: OcrGranularity) => {
+    async (imageId: string, granularity: OcrGranularity) => {
       try {
-        const regions = await runOcr(imageId, lang, granularity)
+        const regions = await runOcr(imageId, granularity)
         toast({
           title: regions.length > 0 ? `텍스트 ${regions.length}개를 찾았습니다` : '인식된 텍스트가 없습니다',
         })
@@ -329,9 +343,9 @@ export function useTextEditing() {
     [],
   )
 
-  const recognizeArea = useCallback(async (imageId: string, area: Rect, lang: OcrLanguage) => {
+  const recognizeArea = useCallback(async (imageId: string, area: Rect) => {
     try {
-      const result = await runOcrArea(imageId, area, lang)
+      const result = await runOcrArea(imageId, area)
       toast(
         result.recognized
           ? { title: `텍스트 ${result.regions.length}개를 찾았습니다` }

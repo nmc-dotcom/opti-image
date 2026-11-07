@@ -2,7 +2,7 @@ import type { EditMask } from '@/types/editing'
 
 /**
  * Plugin contract for future browser-side AI features (background removal via ONNX
- * Runtime Web, OCR via Tesseract.js, etc). Each plugin runs entirely client-side and
+ * Runtime Web, OCR via PaddleOCR PP-OCRv5, etc). Each plugin runs entirely client-side and
  * plugs into the same editor pipeline as the built-in resize/format/crop tools.
  */
 export interface AiPlugin<TOptions = Record<string, unknown>, TResult = Blob> {

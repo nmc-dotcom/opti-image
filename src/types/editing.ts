@@ -110,7 +110,7 @@ export interface TextLayer {
 export interface OcrTextRegion {
   id: string
   text: string
-  /** 0-100, as reported by Tesseract. */
+  /** 0-100: mean character probability of the recognizer. */
   confidence: number
   bbox: Rect
 }

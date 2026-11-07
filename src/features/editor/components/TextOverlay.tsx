@@ -66,7 +66,6 @@ function AreaSelector({
 }) {
   const active = useEditStore((s) => s.ocrAreaMode)
   const setActive = useEditStore((s) => s.setOcrAreaMode)
-  const lang = useEditStore((s) => s.ocrLang)
   const busy = useEditStore((s) => s.job !== null)
   const { recognizeArea } = useTextEditing()
   const start = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null)
@@ -131,7 +130,7 @@ function AreaSelector({
           height: Math.abs(b.y - a.y),
         }
         setActive(false)
-        if (area.width >= 6 && area.height >= 6) void recognizeArea(item.id, area, lang)
+        if (area.width >= 6 && area.height >= 6) void recognizeArea(item.id, area)
       }}
       onPointerCancel={() => {
         start.current = null

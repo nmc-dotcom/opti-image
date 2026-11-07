@@ -35,16 +35,10 @@ import {
 } from '@/hooks/useTextEditing'
 import { FONT_OPTIONS } from '@/lib/textRendering'
 import { cn } from '@/lib/utils'
-import type { OcrGranularity, OcrLanguage } from '@/features/ai/ocr/types'
+import type { OcrGranularity } from '@/features/ai/ocr/types'
 import type { OcrTextRegion, TextLayer } from '@/types/editing'
 import { InpaintMethodPicker } from '../components/InpaintMethodPicker'
 import { JobProgress } from '../components/JobProgress'
-
-const LANGUAGES: { value: OcrLanguage; label: string }[] = [
-  { value: 'kor+eng', label: '한국어 + 영어' },
-  { value: 'eng', label: '영어' },
-  { value: 'kor', label: '한국어' },
-]
 
 const ALIGNS: { value: CanvasTextAlign; icon: React.ReactNode; label: string }[] = [
   { value: 'left', icon: <AlignLeft />, label: '왼쪽' },
@@ -66,8 +60,6 @@ export function TextEditPanel() {
   const selectRegion = useEditStore((s) => s.selectRegion)
   const selectLayer = useEditStore((s) => s.selectLayer)
   const { job, busy, recognize } = useTextEditing()
-  const lang = useEditStore((s) => s.ocrLang)
-  const setLang = useEditStore((s) => s.setOcrLang)
   const areaMode = useEditStore((s) => s.ocrAreaMode)
   const setAreaMode = useEditStore((s) => s.setOcrAreaMode)
   const [granularity, setGranularity] = useState<OcrGranularity>('line')
@@ -82,19 +74,6 @@ export function TextEditPanel() {
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Select value={lang} onValueChange={(v) => setLang(v as OcrLanguage)}>
-          <SelectTrigger className="h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {LANGUAGES.map((l) => (
-              <SelectItem key={l.value} value={l.value} className="text-xs">
-                {l.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         <Button
           className="w-full"
           variant={areaMode ? 'default' : 'secondary'}
@@ -119,7 +98,7 @@ export function TextEditPanel() {
               size="sm"
               variant="outline"
               disabled={busy}
-              onClick={() => recognize(activeId, lang, granularity)}
+              onClick={() => recognize(activeId, granularity)}
             >
               <ScanText /> 전체 인식 (OCR)
             </Button>
@@ -138,8 +117,8 @@ export function TextEditPanel() {
           </div>
         </details>
         <p className="text-[11px] text-muted-foreground">
-          처음 실행 시 OCR 엔진과 언어 데이터(약 8MB)를 내려받습니다. 이미지는 기기 밖으로
-          전송되지 않습니다.
+          처음 실행 시 OCR 모델(약 18MB, 한국어·영어·숫자)을 내려받아 브라우저에 저장합니다.
+          이미지는 기기 밖으로 전송되지 않습니다.
         </p>
       </div>
 

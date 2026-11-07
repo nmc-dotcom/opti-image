@@ -92,7 +92,7 @@ export function estimateTextColors(image: ImageData): { text: string; background
 }
 
 /**
- * Tightens an OCR box to the actual glyph ink inside it. Tesseract's boxes can be noticeably
+ * Tightens an OCR box to the actual glyph ink inside it. OCR boxes can be noticeably
  * loose (e.g. 72px tall for 48px digits); a loose box both oversizes the estimated font and
  * makes the removal mask reach into neighbouring lines. Shrink-only, so it never grows into
  * adjacent text. `image` is the full image the box coordinates refer to.
@@ -134,7 +134,7 @@ export function refineTextBox(image: ImageData, box: Rect): Rect {
       if (d > maxDist) maxDist = d
     }
   }
-  // Busy or low-contrast background: no reliable ink/background split, keep Tesseract's box.
+  // Busy or low-contrast background: no reliable ink/background split, keep the OCR box.
   if (maxDist < 40) return box
   const threshold = Math.max(30, maxDist * 0.4)
 
