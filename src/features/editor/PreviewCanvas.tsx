@@ -155,7 +155,7 @@ export function PreviewCanvas() {
 
       <div
         ref={containerRef}
-        className="checkerboard relative flex flex-1 items-center justify-center overflow-hidden rounded-lg border"
+        className="checkerboard relative flex flex-1 select-none items-center justify-center overflow-hidden rounded-lg border"
         onPointerMove={onContainerPointerMove}
         onPointerUp={onSliderPointerUp}
       >
@@ -210,8 +210,9 @@ export function PreviewCanvas() {
 
           {isCropping && (
             <div
-              className="absolute inset-0 touch-none"
+              className="absolute inset-0 touch-none select-none"
               style={{ cursor: cropOverlay.cursor }}
+              onDragStart={(e) => e.preventDefault()}
               onPointerDown={cropOverlay.onPointerDown}
               onPointerMove={cropOverlay.onPointerMove}
               onPointerUp={cropOverlay.onPointerUp}

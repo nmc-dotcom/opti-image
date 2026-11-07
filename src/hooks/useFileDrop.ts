@@ -28,6 +28,15 @@ function filterFiles(fileList: FileList | File[]): {
   return { accepted, rejected }
 }
 
+/**
+ * True only for drags that carry files from outside the page. Dragging inside the app (selected
+ * text, a thumbnail, a crop drag that the browser turned into a native drag) carries other types
+ * and must not trigger the drop overlay.
+ */
+function carriesFiles(e: React.DragEvent): boolean {
+  return Array.from(e.dataTransfer?.types ?? []).includes('Files')
+}
+
 export function useFileDrop({ onFiles, onRejected }: UseFileDropOptions) {
   const [isDragging, setIsDragging] = useState(false)
   const dragCounter = useRef(0)
@@ -42,12 +51,14 @@ export function useFileDrop({ onFiles, onRejected }: UseFileDropOptions) {
   )
 
   const onDragEnter = useCallback((e: React.DragEvent) => {
+    if (!carriesFiles(e)) return
     e.preventDefault()
     dragCounter.current += 1
     setIsDragging(true)
   }, [])
 
   const onDragLeave = useCallback((e: React.DragEvent) => {
+    if (!carriesFiles(e)) return
     e.preventDefault()
     dragCounter.current -= 1
     if (dragCounter.current <= 0) {
@@ -57,11 +68,13 @@ export function useFileDrop({ onFiles, onRejected }: UseFileDropOptions) {
   }, [])
 
   const onDragOver = useCallback((e: React.DragEvent) => {
+    if (!carriesFiles(e)) return
     e.preventDefault()
   }, [])
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
+      if (!carriesFiles(e)) return
       e.preventDefault()
       // Stop bubbling so a drop is handled exactly once. The empty-state Dropzone is nested
       // inside App's full-window dropzone; without this a single drop fires both handlers and
