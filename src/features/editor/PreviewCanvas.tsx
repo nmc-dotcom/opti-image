@@ -11,6 +11,18 @@ const EditOverlay = lazy(() =>
   import('./components/EditOverlay').then((m) => ({ default: m.EditOverlay })),
 )
 
+/** Handle squares around the crop box, positioned in % of the box. */
+const CROP_HANDLES = [
+  { id: 'nw', left: '0%', top: '0%' },
+  { id: 'n', left: '50%', top: '0%' },
+  { id: 'ne', left: '100%', top: '0%' },
+  { id: 'e', left: '100%', top: '50%' },
+  { id: 'se', left: '100%', top: '100%' },
+  { id: 's', left: '50%', top: '100%' },
+  { id: 'sw', left: '0%', top: '100%' },
+  { id: 'w', left: '0%', top: '50%' },
+]
+
 export function PreviewCanvas() {
   const activeId = useImageStore((s) => s.activeId)
   const item = useImageStore((s) => s.images.find((i) => i.id === activeId))
@@ -79,9 +91,11 @@ export function PreviewCanvas() {
     draggingSlider.current = false
   }, [])
 
+  const cropRatio = useUiStore((s) => (item ? (s.cropRatios[item.id] ?? null) : null))
   const cropOverlay = useCropOverlay(
     imgRef,
     item?.settings.crop ?? null,
+    cropRatio,
     (rect) => {
       if (!item) return
       updateSettings(item.id, (s) => ({ ...s, crop: rect }))
@@ -114,13 +128,19 @@ export function PreviewCanvas() {
   // via a ratio preset or a previous drag stays visible while editing.
   const crop = item.settings.crop
   const committedCropBox =
-    isCropping && crop && !cropOverlay.draftRect && contentBox.width > 0
+    isCropping && crop && contentBox.width > 0
       ? {
-          left: contentBox.offsetX + (crop.x / item.source.width) * contentBox.width,
-          top: contentBox.offsetY + (crop.y / item.source.height) * contentBox.height,
-          width: (crop.width / item.source.width) * contentBox.width,
-          height: (crop.height / item.source.height) * contentBox.height,
+          x: contentBox.offsetX + (crop.x / item.source.width) * contentBox.width,
+          y: contentBox.offsetY + (crop.y / item.source.height) * contentBox.height,
+          w: (crop.width / item.source.width) * contentBox.width,
+          h: (crop.height / item.source.height) * contentBox.height,
         }
+      : null
+  // While dragging, the live box; otherwise the resting crop. One box, one set of handles.
+  const cropBox = isCropping ? (cropOverlay.draftRect ?? committedCropBox) : null
+  const cropLabel =
+    cropBox && cropBox.w >= 1 && contentBox.width > 0
+      ? `${Math.round((cropBox.w / contentBox.width) * item.source.width)} × ${Math.round((cropBox.h / contentBox.height) * item.source.height)}`
       : null
 
   return (
@@ -190,32 +210,31 @@ export function PreviewCanvas() {
 
           {isCropping && (
             <div
-              className="absolute inset-0 cursor-crosshair"
+              className="absolute inset-0 touch-none"
+              style={{ cursor: cropOverlay.cursor }}
               onPointerDown={cropOverlay.onPointerDown}
               onPointerMove={cropOverlay.onPointerMove}
               onPointerUp={cropOverlay.onPointerUp}
             >
-              {cropOverlay.draftRect && (
-                <div
-                  className="absolute border-2 border-primary bg-primary/10"
-                  style={{
-                    left: cropOverlay.draftRect.x,
-                    top: cropOverlay.draftRect.y,
-                    width: cropOverlay.draftRect.w,
-                    height: cropOverlay.draftRect.h,
-                  }}
-                />
-              )}
-              {committedCropBox && (
+              {cropBox && cropBox.w > 0 && cropBox.h > 0 && (
                 <div
                   className="pointer-events-none absolute border-2 border-primary bg-primary/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]"
-                  style={{
-                    left: committedCropBox.left,
-                    top: committedCropBox.top,
-                    width: committedCropBox.width,
-                    height: committedCropBox.height,
-                  }}
-                />
+                  style={{ left: cropBox.x, top: cropBox.y, width: cropBox.w, height: cropBox.h }}
+                >
+                  {CROP_HANDLES.map((h) => (
+                    <span
+                      key={h.id}
+                      data-crop-handle={h.id}
+                      className="absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-sm border border-primary bg-background"
+                      style={{ left: h.left, top: h.top }}
+                    />
+                  ))}
+                  {cropLabel && (
+                    <span className="absolute left-0 top-full mt-1 whitespace-nowrap rounded bg-background/90 px-1.5 py-0.5 text-[10px] font-medium tabular-nums shadow">
+                      {cropLabel}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           )}

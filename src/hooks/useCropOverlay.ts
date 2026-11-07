@@ -1,6 +1,16 @@
 import { useCallback, useRef, useState } from 'react'
 import type { CropRect } from '@/types/image'
 import { getContentRect } from '@/lib/imageCoordinates'
+import {
+  HANDLE_CURSOR,
+  drawBox,
+  grabOffset,
+  hitHandle,
+  resizeBox,
+  type CropHandle,
+  type LocalBounds,
+  type LocalBox,
+} from '@/lib/cropGeometry'
 
 // Shared with the edit (mask/text) overlay; re-exported so existing imports keep working.
 export { getContentRect }
@@ -10,79 +20,113 @@ interface Point {
   y: number
 }
 
+type DragMode =
+  | { kind: 'draw' }
+  | { kind: 'move'; origin: LocalBox }
+  | { kind: 'resize'; origin: LocalBox; handle: CropHandle; grab: Point }
+
+/** How close (CSS px) to an edge/corner the pointer must be to grab it. */
+const HANDLE_HIT = 10
+/** Smallest box (CSS px) a resize may shrink to. */
+const MIN_BOX = 8
+
 /**
  * Drives an interactive crop rectangle drawn on top of a rendered <img>. Pointer positions are
  * tracked in element-local CSS pixels, clamped to the visible image content box, and converted
  * to natural image-pixel coordinates (accounting for object-contain letterboxing) on commit.
  *
- * Two interactions are supported: starting a drag outside the current committed crop draws a
- * new rectangle from scratch (resize-by-redraw); starting a drag inside it translates the
- * existing box, keeping its width/height fixed.
+ * Interactions on the committed box:
+ * - drag a corner or an edge → resize it (the opposite side stays put),
+ * - drag inside → move it, keeping its size,
+ * - drag anywhere outside → draw a new box.
+ * With a locked aspect `ratio` every one of these keeps that ratio.
  */
 export function useCropOverlay(
   imageRef: React.RefObject<HTMLImageElement | null>,
   crop: CropRect | null,
+  ratio: number | null,
   onChange: (rect: CropRect) => void,
   onCommit: () => void,
 ) {
-  const [draftRect, setDraftRect] = useState<{
-    x: number
-    y: number
-    w: number
-    h: number
-  } | null>(null)
+  const [draftRect, setDraftRect] = useState<LocalBox | null>(null)
+  const [cursor, setCursor] = useState('crosshair')
   const start = useRef<Point | null>(null)
-  const mode = useRef<'draw' | 'move'>('draw')
-  const moveOrigin = useRef<{ boxX: number; boxY: number; w: number; h: number } | null>(null)
+  const drag = useRef<DragMode>({ kind: 'draw' })
+
+  const getBounds = useCallback((): LocalBounds | null => {
+    const el = imageRef.current
+    if (!el) return null
+    const rect = el.getBoundingClientRect()
+    const content = getContentRect(el, rect.width, rect.height)
+    return {
+      left: content.offsetX,
+      top: content.offsetY,
+      right: content.offsetX + content.width,
+      bottom: content.offsetY + content.height,
+    }
+  }, [imageRef])
 
   const toLocalPoint = useCallback(
     (e: React.PointerEvent): Point => {
       const el = imageRef.current
-      if (!el) return { x: 0, y: 0 }
+      const bounds = getBounds()
+      if (!el || !bounds) return { x: 0, y: 0 }
       const rect = el.getBoundingClientRect()
-      const content = getContentRect(el, rect.width, rect.height)
       // Clamp to the visible image content so the box can't be drawn over the letterbox padding.
       return {
-        x: Math.min(Math.max(e.clientX - rect.left, content.offsetX), content.offsetX + content.width),
-        y: Math.min(Math.max(e.clientY - rect.top, content.offsetY), content.offsetY + content.height),
+        x: Math.min(Math.max(e.clientX - rect.left, bounds.left), bounds.right),
+        y: Math.min(Math.max(e.clientY - rect.top, bounds.top), bounds.bottom),
       }
     },
-    [imageRef],
+    [imageRef, getBounds],
   )
 
   // Maps the currently committed crop (natural pixels) onto the displayed content box, so a
   // pointerdown can be tested against where the existing box actually is on screen.
-  const getLocalCropBox = useCallback(() => {
+  const getLocalCropBox = useCallback((): LocalBox | null => {
     const el = imageRef.current
     if (!el || !crop || !el.naturalWidth || !el.naturalHeight) return null
-    const bounds = el.getBoundingClientRect()
-    const content = getContentRect(el, bounds.width, bounds.height)
-    const scaleX = content.width / el.naturalWidth
-    const scaleY = content.height / el.naturalHeight
+    const bounds = getBounds()
+    if (!bounds) return null
+    const scaleX = (bounds.right - bounds.left) / el.naturalWidth
+    const scaleY = (bounds.bottom - bounds.top) / el.naturalHeight
     return {
-      x: content.offsetX + crop.x * scaleX,
-      y: content.offsetY + crop.y * scaleY,
+      x: bounds.left + crop.x * scaleX,
+      y: bounds.top + crop.y * scaleY,
       w: crop.width * scaleX,
       h: crop.height * scaleY,
     }
-  }, [imageRef, crop])
+  }, [imageRef, crop, getBounds])
 
+  /** Writes a local-pixel box into settings. Returns true if the crop actually changed. */
   const commitRectToSettings = useCallback(
-    (rect: { x: number; y: number; w: number; h: number }) => {
+    (rect: LocalBox): boolean => {
       const el = imageRef.current
-      if (!el || rect.w < 4 || rect.h < 4) return
-      const bounds = el.getBoundingClientRect()
-      const content = getContentRect(el, bounds.width, bounds.height)
-      const scaleX = el.naturalWidth / content.width
-      const scaleY = el.naturalHeight / content.height
-      onChange({
-        x: Math.round((rect.x - content.offsetX) * scaleX),
-        y: Math.round((rect.y - content.offsetY) * scaleY),
-        width: Math.round(rect.w * scaleX),
-        height: Math.round(rect.h * scaleY),
-      })
+      const bounds = getBounds()
+      if (!el || !bounds || rect.w < 4 || rect.h < 4) return false
+      const scaleX = el.naturalWidth / (bounds.right - bounds.left)
+      const scaleY = el.naturalHeight / (bounds.bottom - bounds.top)
+      const x = Math.min(Math.max(Math.round((rect.x - bounds.left) * scaleX), 0), el.naturalWidth - 1)
+      const y = Math.min(Math.max(Math.round((rect.y - bounds.top) * scaleY), 0), el.naturalHeight - 1)
+      const next: CropRect = {
+        x,
+        y,
+        width: Math.max(1, Math.min(Math.round(rect.w * scaleX), el.naturalWidth - x)),
+        height: Math.max(1, Math.min(Math.round(rect.h * scaleY), el.naturalHeight - y)),
+      }
+      if (
+        crop &&
+        crop.x === next.x &&
+        crop.y === next.y &&
+        crop.width === next.width &&
+        crop.height === next.height
+      ) {
+        return false
+      }
+      onChange(next)
+      return true
     },
-    [imageRef, onChange],
+    [imageRef, getBounds, crop, onChange],
   )
 
   const onPointerDown = useCallback(
@@ -90,18 +134,23 @@ export function useCropOverlay(
       ;(e.target as Element).setPointerCapture(e.pointerId)
       const point = toLocalPoint(e)
       const box = getLocalCropBox()
+      start.current = point
 
-      if (box && point.x >= box.x && point.x <= box.x + box.w && point.y >= box.y && point.y <= box.y + box.h) {
-        mode.current = 'move'
-        start.current = point
-        moveOrigin.current = { boxX: box.x, boxY: box.y, w: box.w, h: box.h }
-        setDraftRect(box)
-        return
+      if (box) {
+        const handle = hitHandle(box, point, HANDLE_HIT)
+        if (handle) {
+          drag.current = { kind: 'resize', origin: box, handle, grab: grabOffset(box, handle, point) }
+          setDraftRect(box)
+          return
+        }
+        if (point.x >= box.x && point.x <= box.x + box.w && point.y >= box.y && point.y <= box.y + box.h) {
+          drag.current = { kind: 'move', origin: box }
+          setDraftRect(box)
+          return
+        }
       }
 
-      mode.current = 'draw'
-      start.current = point
-      moveOrigin.current = null
+      drag.current = { kind: 'draw' }
       setDraftRect({ x: point.x, y: point.y, w: 0, h: 0 })
     },
     [toLocalPoint, getLocalCropBox],
@@ -109,51 +158,59 @@ export function useCropOverlay(
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (!start.current) return
       const point = toLocalPoint(e)
+      const bounds = getBounds()
+      if (!bounds) return
 
-      if (mode.current === 'move' && moveOrigin.current) {
-        const el = imageRef.current
-        if (!el) return
-        const bounds = el.getBoundingClientRect()
-        const content = getContentRect(el, bounds.width, bounds.height)
-        const { boxX, boxY, w, h } = moveOrigin.current
+      // Not dragging: only keep the cursor in sync with what a press here would do.
+      if (!start.current) {
+        const box = getLocalCropBox()
+        let next = 'crosshair'
+        if (box) {
+          const handle = hitHandle(box, point, HANDLE_HIT)
+          if (handle) next = HANDLE_CURSOR[handle]
+          else if (point.x >= box.x && point.x <= box.x + box.w && point.y >= box.y && point.y <= box.y + box.h) {
+            next = 'move'
+          }
+        }
+        setCursor((prev) => (prev === next ? prev : next))
+        return
+      }
+
+      const mode = drag.current
+      if (mode.kind === 'move') {
+        const { origin } = mode
         const dx = point.x - start.current.x
         const dy = point.y - start.current.y
-        const minX = content.offsetX
-        const minY = content.offsetY
-        const maxX = Math.max(minX, content.offsetX + content.width - w)
-        const maxY = Math.max(minY, content.offsetY + content.height - h)
         setDraftRect({
-          x: Math.min(Math.max(boxX + dx, minX), maxX),
-          y: Math.min(Math.max(boxY + dy, minY), maxY),
-          w,
-          h,
+          x: Math.min(Math.max(origin.x + dx, bounds.left), Math.max(bounds.left, bounds.right - origin.w)),
+          y: Math.min(Math.max(origin.y + dy, bounds.top), Math.max(bounds.top, bounds.bottom - origin.h)),
+          w: origin.w,
+          h: origin.h,
         })
         return
       }
 
-      const x = Math.min(start.current.x, point.x)
-      const y = Math.min(start.current.y, point.y)
-      const w = Math.abs(point.x - start.current.x)
-      const h = Math.abs(point.y - start.current.y)
-      setDraftRect({ x, y, w, h })
+      if (mode.kind === 'resize') {
+        const pointer = { x: point.x - mode.grab.x, y: point.y - mode.grab.y }
+        setDraftRect(resizeBox(mode.origin, mode.handle, pointer, bounds, ratio, MIN_BOX))
+        return
+      }
+
+      setDraftRect(drawBox(start.current, point, bounds, ratio))
     },
-    [toLocalPoint, imageRef],
+    [toLocalPoint, getBounds, getLocalCropBox, ratio],
   )
 
   const onPointerUp = useCallback(() => {
-    if (draftRect) {
-      commitRectToSettings(draftRect)
-      onCommit()
-    }
+    // Only a drag that really changed the crop is worth an undo step (a plain click is not).
+    if (draftRect && commitRectToSettings(draftRect)) onCommit()
     start.current = null
-    moveOrigin.current = null
-    mode.current = 'draw'
+    drag.current = { kind: 'draw' }
     // Clear the live draft; the resting crop box is rendered from settings.crop so that
     // preset-applied crops and manual drags share a single source of truth.
     setDraftRect(null)
   }, [draftRect, commitRectToSettings, onCommit])
 
-  return { draftRect, onPointerDown, onPointerMove, onPointerUp }
+  return { draftRect, cursor, onPointerDown, onPointerMove, onPointerUp }
 }
